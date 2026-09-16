@@ -1,23 +1,188 @@
 {
   "schema_version": 1,
-  "fingerprint": "94641653c655d75ec57201db247dcae9e9ae0d11dbd08cf0deb9eaba13398841",
-  "reviewer": "/root/debug_research (CLI, currency, bootstrap, non-policy governance and final documentation corrections); /root/backend_audit (independent policy.go review); /root/app_audit (configuration, just, CI, documentation and Skills)",
+  "fingerprint": "1c97e0fb2f5908d1b8275206f95ed84b8d24443b5b3411d3421255f05c625745",
+  "reviewer": "independent-architecture-reviewer-claude-round2",
   "independent": true,
   "scope": [
-    "cmd/ledger-tool command dispatch and evidence interfaces independently inspected by /root/debug_research",
-    "internal/currency generation, app verification, byte preservation contracts and project-root path containment independently inspected by /root/debug_research",
-    "internal/governance runner, platform process handling, coverage, Git classification, fingerprint, debug evidence, UI report, isolated workspaces and source bundling independently inspected by /root/debug_research",
-    "bootstrap source archive digest validation, bounded extraction and launch independently inspected by /root/debug_research",
-    "internal/governance/policy.go threshold, format, inventory, source-root and baseline ratchets plus VersionCheck independently inspected by /root/backend_audit; its no-remaining-findings conclusion was delivered to /root/debug_research",
-    "governance configuration, justfile, CI, documentation and Skill templates independently inspected by /root/app_audit with no blockers; the final visual-field documentation and debug-template reference corrections were independently inspected by /root/debug_research"
+    "internal/governance/git.go",
+    "internal/governance/policy.go",
+    "internal/governance/config.go",
+    "internal/governance/skills.go",
+    "internal/governance/bundle.go",
+    "internal/governance/classification_test.go",
+    "internal/governance/ratchet_test.go",
+    "internal/governance/skills_test.go",
+    "internal/governance/policy_test.go",
+    "internal/governance/governance_test.go",
+    "bootstrap/bootstrap.go",
+    "bootstrap/bootstrap_test.go",
+    "cmd/ledger-tool/main.go",
+    "cmd/ledger-tool/main_test.go",
+    "governance.json",
+    "docs/contracts.md",
+    "README.md",
+    "AGENTS.md",
+    "templates/skills/"
   ],
-  "findings": [],
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "internal/governance/git.go",
+      "line": 254,
+      "rule": "A policy gate must fire for every changed path it actually covers, and an unresolvable target must fail closed instead of passing silently.",
+      "trigger": "Earlier revision: a gate declared with ./..., ./pkg/..., a hyphenated directory such as ./internal/money-rounding, an inline --include=PATH, or ./ produced an unusable path so gated() returned false.",
+      "impact": "Classification silently reported mutation/fuzz false for every changed file, so expensive gates could be skipped for the exact packages they were declared to protect.",
+      "recommendation": "Keep gated()/commandPaths() derived from the policy's own argv and keep the fail-closed unknown/whole branches covered by tests.",
+      "resolved": true
+    },
+    {
+      "severity": "P2",
+      "file": "internal/governance/git.go",
+      "line": 186,
+      "rule": "A rename must not hide a gate: both the old and the new path have to be classified.",
+      "trigger": "Earlier revision: Classify used git diff --name-only with rename detection, so git mv internal/money/value.go internal/other.go reported only the new path.",
+      "impact": "Moving a file out of a gated package removed it from the gate without any recorded decision.",
+      "recommendation": "Keep --no-renames in Classify (and ChangedLines) so the deleted side is always reported.",
+      "resolved": true
+    },
+    {
+      "severity": "P2",
+      "file": "internal/governance/policy.go",
+      "line": 118,
+      "rule": "Step identity must include the working directory and environment, not only argv.",
+      "trigger": "Earlier revision: retargeting a step with Step.Dir, or neutralising it with Step.Env such as GOFLAGS=-run=^$, passed the ratchet unnoticed.",
+      "impact": "A gate step could be redirected or silenced while policy-check still reported success.",
+      "recommendation": "Keep the [dir=...] and sorted [KEY=value] suffix in stepIdentity and the dir-retarget/env-retarget tests.",
+      "resolved": true
+    },
+    {
+      "severity": "P2",
+      "file": "internal/governance/policy.go",
+      "line": 57,
+      "rule": "A command_migrations entry must be validated only when it is actually consumed, so unused entries cannot break later unrelated changes.",
+      "trigger": "Earlier revision: an unused, expired command_migrations entry failed every later policy-check/coverage-check.",
+      "impact": "A stale migration record permanently blocked unrelated policy edits until it was deleted, which invited deleting the ratchet instead.",
+      "recommendation": "Keep validation inside require() and keep a used entry validated for owner, reason, unexpired ISO expiry and the 30-day bound.",
+      "resolved": true
+    },
+    {
+      "severity": "P2",
+      "file": "internal/governance/policy.go",
+      "line": 139,
+      "rule": "A pinned tool version is not part of a step identity, while a shape or target change is.",
+      "trigger": "Earlier revision: a bump inside a version-check --pattern value, or inside a linker Version= assignment such as -ldflags=-X pkg/version.Version=8.30.1, was reported as a step removal.",
+      "impact": "Ordinary tool upgrades were rejected as gate removals, contradicting the documented pin exemption and pushing maintainers to file meaningless migrations.",
+      "recommendation": "Keep the digit masking for --pattern/--pattern= values and for the value after Version=; keep unmasked shape and target tokens normative.",
+      "resolved": true
+    },
+    {
+      "severity": "P3",
+      "file": "internal/governance/policy.go",
+      "line": 121,
+      "rule": "A step with empty argv must be removable with a recorded migration, and its key must be stable under sibling reordering or removal.",
+      "trigger": "Earlier revision: a step with empty argv demanded an un-migratable key.",
+      "impact": "A malformed or intentional empty step could not be removed through the documented migration path.",
+      "recommendation": "Keep the '<command> (no argv)' identity stable and independent of sibling order and count.",
+      "resolved": true
+    },
+    {
+      "severity": "P3",
+      "file": "internal/governance/skills.go",
+      "line": 39,
+      "rule": "Nested skill templates are a configuration error and must be rejected, not silently unchecked.",
+      "trigger": "Earlier revision: templates/skills/<sub>/name.md was walked but never compared, so the consumer copy could drift unnoticed.",
+      "impact": "A nested template gave the appearance of an enforced skill while nothing was enforced.",
+      "recommendation": "Keep the nested-path rejection reachable at any depth and keep the SkillsCheck nested-template test.",
+      "resolved": true
+    },
+    {
+      "severity": "P3",
+      "file": "bootstrap/bootstrap.go",
+      "line": 149,
+      "rule": "The launcher must require the higher of the go and toolchain directives and fail fast with an actionable message.",
+      "trigger": "Earlier revision: bootstrap ignored the toolchain directive and could not surface go env stderr.",
+      "impact": "A repository pinning a newer toolchain only in the toolchain directive was reported as satisfied, and failures surfaced an unrelated build error instead of a blocked capability.",
+      "recommendation": "Keep moduleGoVersion() returning the maximum and requireToolchain() reporting the required version, the local version, the GOTOOLCHAIN mode and the captured stderr.",
+      "resolved": true
+    },
+    {
+      "severity": "P3",
+      "file": "docs/contracts.md",
+      "line": 42,
+      "rule": "Documentation must describe the behaviour that is actually implemented.",
+      "trigger": "Earlier revision: the classification contract (.md/.txt paths must not demand UI evidence) and the pin-exemption claim were not upheld.",
+      "impact": "Reviewers and CI readers would act on a contract the tool did not implement.",
+      "recommendation": "Keep documentation edits under lib/, assets/, android/, ios/ and integration_test/ classified as docs_only with visual/ui/native false; the pin-exemption sentence now matches coverage.",
+      "resolved": true
+    },
+    {
+      "severity": "P2",
+      "file": "docs/contracts.md",
+      "line": 52,
+      "rule": "Documented classifier guarantees must hold for every input the tool accepts.",
+      "trigger": "The contract states 'an unconfigured gate is not triggered' and 'a configured gate whose paths cannot be read is treated as affected', but Classify forces Fuzz and Mutation true for every policy-classified path regardless of whether those gates exist (internal/governance/git.go:237-243). With only a build command configured, editing docs/x.md yields mutation=true and fuzz=true.",
+      "impact": "A documented exclusion cannot be relied on: an adopter who leaves fuzz/mutation unconfigured still has those gates reported as required for governance and docs changes, so the contract contradicts observable output. The same override is present at base 4354143, so this correction round documented a behaviour it did not change.",
+      "recommendation": "Either restrict the policy override to the gates the policy actually configures, or state the exception in contracts.md and README.md (policy-classified paths always broaden fuzz and mutation).",
+      "resolved": false
+    },
+    {
+      "severity": "P2",
+      "file": "internal/governance/git.go",
+      "line": 260,
+      "rule": "Path targets a policy names must resolve to the same normalised path regardless of the spelling the tool itself accepts.",
+      "trigger": "--include=internal/money/ (trailing slash) is accepted by isolated-run, but commandPaths() trims only a leading './' and one trailing '/', so the value keeps its trailing slash and the prefix test file == p || HasPrefix(file, p+\"/\") cannot match internal/money/value.go. It falls through to the step's !found branch at internal/governance/git.go:301, setting unknown=true.",
+      "impact": "The gate still fires, but for the wrong reason: unrecognised target forms are swallowed by the command-wide unknown flag, which makes every path in the repository look affected. Verified in scratch repo /tmp/ltr/repoG: with --include=internal/money/ a change inside that package reports mutation=false, while the same policy with --include=internal/money reports mutation=true, so the scoped evidence requirement silently degrades.",
+      "recommendation": "Normalise the extracted value with a trailing-slash trim after the './' trim (and treat a directory include as both the directory and its subtree), then add a test for the trailing-slash include form.",
+      "resolved": false
+    },
+    {
+      "severity": "P3",
+      "file": "internal/governance/classification_test.go",
+      "line": 24,
+      "rule": "Tests must fail when the behaviour they claim to protect regresses.",
+      "trigger": "A mutation census over the new tests (mutable source copy at /tmp/ltr/src, 18 targeted mutations, focused selection TestClassification|TestCommandPaths|TestPolicyStepIdentity|TestStepIdentityMasksOnlyPins|TestSkillsCheck) left three mutants alive: (1) changing Classify's backend guard from 'policy.Kind == \"go\" && !doc' to '!doc' (internal/governance/git.go:214) - no test asserts backend=false for a non-go policy; (2) deleting the Version= maskDigits call in maskedArgv (internal/governance/policy.go:156-158) - the scanner-release-bump fixture uses 8.31.0, exactly the placeholder the shortened mask yields, so the test cannot distinguish the two; (3) removing the len(paths)==0 clause from gated().",
+      "impact": "A regression in the backend kind guard or in the linker-version mask would ship undetected while the suite stays green, which is the same class of gap this correction round was meant to close.",
+      "recommendation": "Add a kind=flutter classification case that asserts backend=false, assert stepIdentity() directly for a linker pair that the shortened mask would treat differently, and add a commandPaths() case with no steps at all if the len(paths)==0 branch is meant to be reachable.",
+      "resolved": false
+    },
+    {
+      "severity": "P3",
+      "file": "internal/governance/skills.go",
+      "line": 36,
+      "rule": "Template discovery must not silently ignore a template file.",
+      "trigger": "SkillsCheck filters with filepath.Ext(rel) != \".md\", which is case-sensitive. A template shipped as templates/skills/name.MD (or any non-.md name) is skipped without an error, and skipped files also do not count towards the checked>0 guard.",
+      "impact": "On a consumer that copies templates by glob (case-insensitive filesystems are the default on Windows and macOS) a .MD template yields no required .agents/skills/<name>/SKILL.md and no diagnostic, reproducing the silently-unchecked class this finding was meant to remove. Verified: an uppercase .MD at the top level leaves skills-check passing with no consumer copy present.",
+      "recommendation": "Lower-case the extension before the comparison and reject an unsupported extension in the top-level template directory instead of returning nil.",
+      "resolved": false
+    },
+    {
+      "severity": "P3",
+      "file": "docs/contracts.md",
+      "line": 52,
+      "rule": "Capacity claims must match measured behaviour in the case the reader will hit.",
+      "trigger": "The contract says 'renaming a file inside a gated package keeps the gate'. With --no-renames the diff reports the old path as a deletion rather than a rename, so the classified file list contains stale paths. Verified end to end: after git mv internal/rounding internal/other/rounding, changes reports files ['internal/other/rounding/r.go','internal/rounding/r.go'] with fuzz=true, i.e. the old path is what made the gate fire, not a live file.",
+      "impact": "The safety property is unaffected (the gate does fire and a file moved out of a gated package is still caught), but the reported file list is misleading for CI consumers and the sentence overstates the mechanism.",
+      "recommendation": "Reword to state that a rename is reported as the deleted source plus the added target, so the deleted side keeps the old gate active.",
+      "resolved": false
+    },
+    {
+      "severity": "P3",
+      "file": "internal/governance/policy.go",
+      "line": 149,
+      "rule": "Masking code must match the forms the CLI actually accepts.",
+      "trigger": "maskedArgv handles the inline '--pattern=REGEX' form, and the ratchet fixtures (ratchet_test.go:13 and the inline-pattern tests) use it, but cmd/ledger-tool/main.go:69 only reads the space-separated form through option(args, \"--pattern\"). Running version-check '--pattern=^go version ' -- go version fails with 'invalid or empty version requirement'.",
+      "impact": "The inline branch is unreachable in production, and the tests that exercise it create false confidence that an inline config works. A policy author who writes the inline form gets a runtime failure that no test in this round would have caught.",
+      "recommendation": "Either parse --pattern=REGEX in main.go (and add a dispatch test) or drop the inline handling and the fixtures that depend on it.",
+      "resolved": false
+    }
+  ],
   "limitations": [
-    "The reviewers did not self-approve their own production implementation: /root/debug_research authored policy.go, which /root/backend_audit independently reviewed; /root/backend_audit authored currency, which /root/debug_research independently reviewed.",
-    "Configuration and documentation authored by /root/debug_research were independently reviewed by /root/app_audit. This tooling review does not substitute for consumer-specific governance or native acceptance evidence.",
-    "Go 1.26.6 macOS full go test -race ./... passed after currency and policy repairs; the final bundle and tracked-UI-manifest changes also passed targeted go test -race -run 'TestBundle|TestUIReport' ./internal/governance.",
-    "Earlier findings for concurrent debug output, first-commit bases, tracked UI manifest self-reference, currency ancestor symlinks, bundle output symlinks and ignored source inclusion were repaired and re-inspected.",
-    "Windows and Linux native execution, hosted CI, production deployment and real mobile-device flows were not performed by this reviewer.",
-    "Source fingerprints verify evidence freshness, not cryptographic reviewer identity. The user requested local-only work; no remote publication or branch-protection change is claimed."
+    "Local-only delivery by explicit user decision: the repository was never pushed and no hosted CI ran; the .github/workflows/ci.yml matrix (ubuntu, macos, windows) was not executed. All native verification in this review is on macOS arm64 with go1.26.2.",
+    "Linux and Windows runners were not executed; Windows-only paths (process_windows.go, platform-specific process handling, CRLF handling) were assessed by reading and by the repository's own unit tests only.",
+    "The reviewer identity and independence are asserted, not cryptographically proven; the tool itself documents that it cannot authenticate a reviewer from a JSON file.",
+    "Negative cases were reproduced in scratch Git repositories under /tmp/ltr (repos A-K, a mutable source copy for the mutation census, and synthetic bootstrap archives); the reviewed repository was not modified, and no source file in it was changed by this review.",
+    "The mutation census used a focused test selection (the new/updated test functions plus TestSkillsCheck) rather than the entire suite, so a surviving mutant could in principle be caught by an unrelated test; each survivor was additionally inspected by hand.",
+    "The bootstrap fail-fast path was exercised with a synthetic go.mod and a stub go executable on PATH; the go env stderr path was not reproduced against a real broken toolchain install.",
+    "End-to-end gates (go test ./..., coverage-check --base HEAD, format-check, fingerprint) were run with GOCACHE redirected to the workspace cache; GOTOOLCHAIN downloads and network-dependent steps (security, security-dependencies) were not executed."
   ]
 }

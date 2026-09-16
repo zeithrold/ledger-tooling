@@ -91,10 +91,19 @@ func run(ctx context.Context, args []string) error {
 			return g.Doctor(ctx, r)
 		case "commit-check":
 			return g.CommitCheck(strings.Join(args, " "))
+		case "skills-check":
+			templates, args := option(args, "--templates")
+			if len(args) > 0 {
+				return fmt.Errorf("skills-check: unexpected argument %q", args[0])
+			}
+			return g.SkillsCheck(root, templates)
 		case "changes":
 			base, args := option(args, "--base")
-			out, _ := option(args, "--github-output")
-			v, e := g.Classify(root, base, c.Kind)
+			out, rest := option(args, "--github-output")
+			if len(rest) > 0 {
+				return fmt.Errorf("changes: unexpected argument %q", rest[0])
+			}
+			v, e := g.Classify(root, base, c)
 			if e != nil {
 				return e
 			}

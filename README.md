@@ -28,13 +28,14 @@ The tool does not replace Flutter/Dart, Go, Docker or platform SDKs. macOS, Linu
 | --- | --- |
 | `doctor` | Inspect tools required by the repository |
 | `check` | Execute the repository's declared quality steps |
-| `policy-check --base REF` | Reject coverage-policy weakening against the target revision |
+| `policy-check --base REF` | Reject coverage- and gate-policy weakening against the target revision |
 | `version-check --pattern REGEX -- COMMAND ...` | Execute a capability probe and require matching version output |
-| `changes --base REF --json` | Explain affected suites; `--github-output PATH` writes CI outputs |
+| `changes --base REF` | Explain affected suites; JSON goes to stdout and `--github-output PATH` writes CI outputs. Unknown flags are rejected |
 | `coverage-check --base REF` | Enforce overall and incremental floors using the configured profile |
 | `fingerprint` | Identify the source snapshot used by evidence |
 | `review-check --file .governance/review.json` | Reject missing, stale or blocking independent-review evidence |
 | `commit-check 'fix(scope): summary'` | Validate a Conventional Commit/PR title |
+| `skills-check [--templates DIR]` | Require consumer skill copies to match the pinned templates byte for byte |
 | `generate-check --output PATH -- COMMAND ...` | Regenerate in an isolated copy and compare output |
 | `isolated-run --include PATH -- COMMAND ...` | Run a tool against explicit copied inputs, without developer config |
 | `currency --check` | Verify backend currency source hashes and generated artifacts |

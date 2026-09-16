@@ -15,6 +15,17 @@ type Config struct {
 	Coverage      CoverageConfig      `json:"coverage"`
 	Tools         map[string][]string `json:"tools,omitempty"`
 	DebugProfiles map[string]Command  `json:"debug_profiles,omitempty"`
+	Migrations    []Migration         `json:"command_migrations,omitempty"`
+}
+
+// Migration acknowledges, for a bounded period, that a policy step or command
+// left the quality gate. It is required by policy-check, so deleting a gate
+// step is an explicit recorded decision rather than an editing accident.
+type Migration struct {
+	Step    string `json:"step"`
+	Owner   string `json:"owner"`
+	Reason  string `json:"reason"`
+	Expires string `json:"expires"`
 }
 type Command struct {
 	Description string `json:"description,omitempty"`

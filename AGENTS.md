@@ -2,7 +2,7 @@
 
 - Keep source, documentation and commit messages in English. Preserve unrelated changes.
 - Keep this repository a small Go CLI that composes existing tools. Do not add a second language runtime, shell framework, universal debugger or hidden network service.
-- Treat `governance.json` and evidence JSON as versioned public interfaces. Reject malformed or unsupported inputs, missing evidence, stale fingerprints and out-of-root paths. Never turn infrastructure failures into passes.
+- Treat `governance.json` and evidence JSON as versioned public interfaces. Reject malformed or unsupported inputs, missing evidence, stale fingerprints and out-of-root paths. Never turn infrastructure failures into passes. A gate step may only leave a policy through a recorded, owner-attributed, expiring `command_migrations` entry, and consumer skill copies must match the pinned templates.
 - Use argument arrays and Go process/filesystem APIs. Keep Unix and Windows process handling behind platform files; validate on actual OS runners. Cross-compilation alone is not native Windows validation.
 - Keep tests deterministic and credential-free. Use temporary Git repositories and local subprocess fixtures for coverage/diff, path containment, timeout, review freshness, red/green sessions and UI report tests.
 - Do not copy `.env*`, Git metadata, raw secrets or unrelated source into isolated tool workspaces. Record only the minimum evidence needed; do not automatically upload debug data.

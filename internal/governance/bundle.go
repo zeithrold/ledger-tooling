@@ -27,7 +27,7 @@ func Bundle(root string, destinations []string) error {
 		if strings.HasPrefix(r, "build/") || strings.HasPrefix(r, "coverage/") || strings.HasPrefix(r, "bin/") {
 			continue
 		}
-		if !strings.HasSuffix(r, ".go") && r != "go.mod" && r != "go.sum" {
+		if !strings.HasSuffix(r, ".go") && r != "go.mod" && r != "go.sum" && !strings.HasPrefix(r, "templates/") {
 			continue
 		}
 		p, err := safePath(root, r)

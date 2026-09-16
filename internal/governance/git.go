@@ -177,13 +177,13 @@ type Changes struct {
 	Files    []string `json:"files"`
 }
 
-func Classify(root, base, kind string) (Changes, error) {
+func Classify(root, base string, policy Config) (Changes, error) {
 	var c Changes
 	b, e := Base(root, base)
 	if e != nil {
 		return c, e
 	}
-	s, e := git(root, "diff", "--name-only", "-z", b, "--")
+	s, e := git(root, "diff", "--name-only", "-z", "--no-renames", b, "--")
 	if b == "EMPTY" {
 		files, err := SourceFiles(root)
 		e = err
@@ -211,23 +211,25 @@ func Classify(root, base, kind string) (Changes, error) {
 		if strings.HasPrefix(f, ".github/") || strings.HasPrefix(f, ".agents/") || strings.HasPrefix(f, "tool/") || strings.HasPrefix(f, ".governance/") || strings.HasPrefix(f, ".go") || f == "governance.json" || f == "justfile" || f == "go.mod" || f == "go.sum" || strings.HasPrefix(f, "pubspec.") || f == "analysis_options.yaml" || f == "AGENTS.md" || f == "DESIGN.md" || f == "CONTRIBUTING.md" || strings.HasPrefix(f, "docs/") {
 			c.Policy = true
 		}
-		if kind == "go" && !doc {
+		if policy.Kind == "go" && !doc {
 			c.Backend = true
 		}
-		if strings.HasPrefix(f, "lib/") || strings.HasPrefix(f, "assets/") || strings.HasPrefix(f, "integration_test/") || strings.HasPrefix(f, "test_driver/") {
-			c.UI = true
+		if !doc {
+			if strings.HasPrefix(f, "lib/") || strings.HasPrefix(f, "assets/") || strings.HasPrefix(f, "integration_test/") || strings.HasPrefix(f, "test_driver/") {
+				c.UI = true
+			}
+			if strings.HasPrefix(f, "lib/features/") || strings.HasPrefix(f, "lib/shared/") || strings.HasPrefix(f, "lib/app/") || strings.HasPrefix(f, "lib/l10n/") || strings.HasPrefix(f, "assets/") {
+				c.Visual = true
+			}
+			if strings.HasPrefix(f, "ios/") || strings.HasPrefix(f, "android/") {
+				c.Native = true
+				c.UI = true
+			}
 		}
-		if strings.HasPrefix(f, "lib/features/") || strings.HasPrefix(f, "lib/shared/") || strings.HasPrefix(f, "lib/app/") || strings.HasPrefix(f, "lib/l10n/") || strings.HasPrefix(f, "assets/") {
-			c.Visual = true
-		}
-		if strings.HasPrefix(f, "ios/") || strings.HasPrefix(f, "android/") {
-			c.Native = true
-			c.UI = true
-		}
-		if strings.Contains(f, "money") || strings.Contains(f, "accounting") || strings.Contains(f, "auth") || strings.Contains(f, "identity") || strings.Contains(f, "config") {
+		if gated(policy, "fuzz", f) {
 			c.Fuzz = true
 		}
-		if strings.Contains(f, "money") {
+		if gated(policy, "mutation-accounting", f) {
 			c.Mutation = true
 		}
 	}
@@ -236,12 +238,70 @@ func Classify(root, base, kind string) (Changes, error) {
 		c.Code = true
 		c.Fuzz = true
 		c.Mutation = true
-		c.Backend = kind == "go"
-		c.UI = kind == "flutter"
-		c.Native = kind == "flutter"
+		c.Backend = policy.Kind == "go"
+		c.UI = policy.Kind == "flutter"
+		c.Native = policy.Kind == "flutter"
 	}
 	c.DocsOnly = !c.Code && !c.Policy
 	return c, nil
+}
+
+// gated reports whether a changed path belongs to a source area that a
+// configured command actually exercises. Classification follows the paths the
+// policy names, so renaming a file cannot silently remove it from a gate, and
+// an unrelated file that merely contains a keyword cannot add one. A command
+// that names no resolvable path is treated as affected.
+func gated(policy Config, name, file string) bool {
+	cmd, ok := policy.Commands[name]
+	if !ok {
+		return false
+	}
+	paths, whole, unknown := commandPaths(cmd)
+	if whole || unknown || len(paths) == 0 {
+		return true
+	}
+	for _, p := range paths {
+		if file == p || strings.HasPrefix(file, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// commandPaths extracts the sources a command operates on. whole reports a
+// repository-wide target; unknown reports a step whose targets could not be
+// resolved, which must not be mistaken for "affects nothing".
+func commandPaths(command Command) (paths []string, whole, unknown bool) {
+	for _, step := range command.Steps {
+		found := false
+		for i, arg := range step.Argv {
+			value := ""
+			switch {
+			case i > 0 && step.Argv[i-1] == "--include":
+				value = arg
+			case strings.HasPrefix(arg, "--include="):
+				value = strings.TrimPrefix(arg, "--include=")
+			case strings.HasPrefix(arg, "./"):
+				value = arg
+			default:
+				continue
+			}
+			found = true
+			value = strings.TrimSuffix(strings.TrimPrefix(value, "./"), "/")
+			switch {
+			case value == "" || value == "." || value == "...":
+				whole = true
+			case strings.HasSuffix(value, "/..."):
+				paths = append(paths, strings.TrimSuffix(value, "/..."))
+			default:
+				paths = append(paths, value)
+			}
+		}
+		if !found {
+			unknown = true
+		}
+	}
+	return paths, whole, unknown
 }
 
 var commitPattern = regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9][a-z0-9-]*\))?!?: [A-Za-z][^\r\n]+$`)

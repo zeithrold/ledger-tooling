@@ -107,12 +107,12 @@ func TestGitChangesFingerprintAndClassification(t *testing.T) {
 	if e != nil || next == fp {
 		t.Fatal("fingerprint stale", e)
 	}
-	c, e := Classify(r, "", "flutter")
+	c, e := Classify(r, "", Config{Kind: "flutter"})
 	if e != nil || !c.Code || !c.UI || c.DocsOnly {
 		t.Fatal(c, e)
 	}
 	put(t, r, "governance.json", "{}")
-	c, e = Classify(r, "", "flutter")
+	c, e = Classify(r, "", Config{Kind: "flutter"})
 	if e != nil || !c.Policy || !c.Native || !c.Fuzz || !c.Mutation {
 		t.Fatal(c, e)
 	}
@@ -130,13 +130,13 @@ func TestGitChangesFingerprintAndClassification(t *testing.T) {
 	}
 	docs := repo(t)
 	put(t, docs, "README.md", "documentation")
-	c, e = Classify(docs, "", "go")
+	c, e = Classify(docs, "", Config{Kind: "go"})
 	if e != nil || !c.DocsOnly || c.Code {
 		t.Fatal(c, e)
 	}
 	money := repo(t)
 	put(t, money, "internal/money/value.go", "package money")
-	c, e = Classify(money, "", "go")
+	c, e = Classify(money, "", gatedPolicy("go"))
 	if e != nil || !c.Backend || !c.Mutation || !c.Fuzz {
 		t.Fatal(c, e)
 	}
@@ -685,10 +685,10 @@ func TestErrorSurfaces(t *testing.T) {
 	if _, e := ChangedLines(r, ""); e == nil {
 		t.Fatal("nonrepo changes passed")
 	}
-	if _, e := Classify(r, "invalid", "go"); e == nil {
+	if _, e := Classify(r, "invalid", Config{Kind: "go"}); e == nil {
 		t.Fatal("invalid base passed")
 	}
-	if _, e := Classify(r, "", "go"); e == nil {
+	if _, e := Classify(r, "", Config{Kind: "go"}); e == nil {
 		t.Fatal("nonrepo classification passed")
 	}
 	if _, e := DebugStart(context.Background(), r, "bad"); e == nil {

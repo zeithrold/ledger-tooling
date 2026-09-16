@@ -160,6 +160,62 @@ func TestBootstrapBuildFailure(t *testing.T) {
 		t.Fatal("invalid tool build passed")
 	}
 }
+func TestToolchainRequirement(t *testing.T) {
+	dir := t.TempDir()
+	if moduleGoVersion(dir) != "" {
+		t.Fatal("missing go.mod reported a requirement")
+	}
+	writeFixture(t, dir, "go.mod", []byte("module test.invalid/tool\n\ngo 1.26.6\n\ntoolchain go1.26.6\n"))
+	if got := moduleGoVersion(dir); got != "1.26.6" {
+		t.Fatal(got)
+	}
+	writeFixture(t, dir, "go.mod", []byte("module test.invalid/tool\n\ngo 1.21.0\n\ntoolchain go1.26.6\n"))
+	if got := moduleGoVersion(dir); got != "1.26.6" {
+		t.Fatal("newer toolchain directive ignored:", got)
+	}
+	writeFixture(t, dir, "go.mod", []byte("module test.invalid/tool\n\ngo 1.27.0\n\ntoolchain go1.26.6\n"))
+	if got := moduleGoVersion(dir); got != "1.27.0" {
+		t.Fatal("newer go directive ignored:", got)
+	}
+	writeFixture(t, dir, "go.mod", []byte("module test.invalid/tool\n\ngo 1.26.2\n"))
+	if got := moduleGoVersion(dir); got != "1.26.2" {
+		t.Fatal(got)
+	}
+	for _, tc := range []struct {
+		local, required string
+		older           bool
+	}{{"go1.26.6", "1.26.6", false}, {"go1.26.5", "1.26.6", true}, {"go1.27.0", "1.26.6", false}, {"go1.25", "1.26.6", true}, {"go1.26.10", "1.26.6", false}} {
+		if olderThan(tc.local, tc.required) != tc.older {
+			t.Fatalf("%s vs %s", tc.local, tc.required)
+		}
+	}
+	if e := requireToolchain(""); e != nil {
+		t.Fatal(e)
+	}
+	if e := requireToolchain("1.0.0"); e != nil {
+		t.Fatal("newer local toolchain rejected:", e)
+	}
+	t.Setenv("GOTOOLCHAIN", "local")
+	if e := requireToolchain("1.0.0"); e != nil {
+		t.Fatal("satisfied requirement rejected:", e)
+	}
+	e := requireToolchain("99.0.0")
+	if e == nil || !strings.Contains(e.Error(), "blocked") || !strings.Contains(e.Error(), "99.0.0") {
+		t.Fatal("impossible offline requirement accepted:", e)
+	}
+}
+
+func TestBootstrapBlocksUnavailableToolchain(t *testing.T) {
+	r := t.TempDir()
+	t.Chdir(r)
+	t.Setenv("GOTOOLCHAIN", "local")
+	lockArchive(t, r, archiveBytes(t, []archiveEntry{{name: "go.mod", body: "module test.invalid/tool\n\ngo 99.0.0\n"}, {name: "cmd/ledger-tool/main.go", body: "package main\nfunc main(){}\n"}}, false))
+	e := run()
+	if e == nil || !strings.Contains(e.Error(), "blocked") || !strings.Contains(e.Error(), "go 99.0.0") {
+		t.Fatalf("want an actionable blocked toolchain error, got %v", e)
+	}
+}
+
 func TestBootstrapSuccessPreservesArgv(t *testing.T) {
 	r := t.TempDir()
 	t.Chdir(r)

@@ -124,6 +124,103 @@ func TestPolicyCheckHistory(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func commandPolicy(step ...string) Config {
+	commands := map[string]Command{
+		"check":    {Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}, {Argv: []string{"go", "test", "-race", "./..."}}}},
+		"security": {Steps: []Step{{Argv: step}}},
+	}
+	return Config{SchemaVersion: 1, Kind: "go", Commands: commands}
+}
+
+func TestPolicyCommandRatchet(t *testing.T) {
+	previous := commandPolicy("go", "run", "example.test/gitleaks@v8.30.1", "dir", ".")
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name      string
+		change    func(*Config)
+		wantError bool
+	}{
+		{"unchanged", func(*Config) {}, false},
+		{"added-step", func(c *Config) {
+			c.Commands["check"] = Command{Steps: append(c.Commands["check"].Steps, Step{Argv: []string{"go", "vet", "./..."}})}
+		}, false},
+		{"tool-upgrade", func(c *Config) {
+			c.Commands["security"] = Command{Steps: []Step{{Argv: []string{"go", "run", "example.test/gitleaks@v8.31.0", "dir", "."}}}}
+		}, false},
+		{"removed-step", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+		}, true},
+		{"retargeted-step", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}, {Argv: []string{"go", "test", "./internal/money"}}}}
+		}, true},
+		{"removed-command", func(c *Config) { delete(c.Commands, "security") }, true},
+		{"migrated-step", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+			c.Migrations = []Migration{{Step: "go test -race ./...", Owner: "maintainer", Reason: "superseded by the merged coverage gate", Expires: "2026-10-01"}}
+		}, false},
+		{"migrated-command", func(c *Config) {
+			delete(c.Commands, "security")
+			c.Migrations = []Migration{{Step: "command:security", Owner: "maintainer", Reason: "moved into check", Expires: "2026-10-01"}}
+		}, false},
+		{"migration-without-owner", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+			c.Migrations = []Migration{{Step: "go test -race ./...", Reason: "no owner", Expires: "2026-10-01"}}
+		}, true},
+		{"migration-without-reason", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+			c.Migrations = []Migration{{Step: "go test -race ./...", Owner: "maintainer", Expires: "2026-10-01"}}
+		}, true},
+		{"expired-migration", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+			c.Migrations = []Migration{{Step: "go test -race ./...", Owner: "maintainer", Reason: "expired", Expires: "2026-09-15"}}
+		}, true},
+		{"open-ended-migration", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+			c.Migrations = []Migration{{Step: "go test -race ./...", Owner: "maintainer", Reason: "too long", Expires: "2026-11-30"}}
+		}, true},
+		{"malformed-migration-expiry", func(c *Config) {
+			c.Commands["check"] = Command{Steps: []Step{{Argv: []string{"@ledger-tool", "policy-check"}}}}
+			c.Migrations = []Migration{{Step: "go test -race ./...", Owner: "maintainer", Reason: "bad date", Expires: "soon"}}
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := previous
+			current.Commands = map[string]Command{}
+			for name, command := range previous.Commands {
+				current.Commands[name] = Command{Steps: append([]Step{}, command.Steps...)}
+			}
+			tc.change(&current)
+			if e := compareCommandPolicy(previous, current, now); (e != nil) != tc.wantError {
+				t.Fatal(e)
+			}
+		})
+	}
+}
+
+func TestPolicyCommandRatchetHistory(t *testing.T) {
+	r := repo(t)
+	cfg := Config{SchemaVersion: 1, Coverage: goCoverage(), Commands: map[string]Command{"check": {Steps: []Step{{Argv: []string{"go", "test", "./..."}}}}}}
+	if e := WriteJSON(filepath.Join(r, "governance.json"), cfg); e != nil {
+		t.Fatal(e)
+	}
+	gitOK(t, r, "add", "governance.json")
+	gitOK(t, r, "commit", "-qm", "build(policy): Establish the gate")
+	cfg.Commands["check"] = Command{Steps: []Step{{Argv: []string{"go", "vet", "./..."}}}}
+	if e := WriteJSON(filepath.Join(r, "governance.json"), cfg); e != nil {
+		t.Fatal(e)
+	}
+	if e := PolicyCheck(r, ""); e == nil {
+		t.Fatal("gate step swap passed the ratchet")
+	}
+	cfg.Migrations = []Migration{{Step: "go test ./...", Owner: "maintainer", Reason: "covered by the merged gate", Expires: time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")}}
+	if e := WriteJSON(filepath.Join(r, "governance.json"), cfg); e != nil {
+		t.Fatal(e)
+	}
+	if e := PolicyCheck(r, ""); e != nil {
+		t.Fatal(e)
+	}
+}
+
 func TestVersionCapability(t *testing.T) {
 	t.Setenv("LEDGER_TEST_PROCESS", "1")
 	argv := helperStep("echo", "v1.2.3").Argv
