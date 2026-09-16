@@ -20,7 +20,7 @@ var builtinCommands = []string{
 }
 
 var (
-	justKeyword = regexp.MustCompile(`^(set|export|unexport|import|mod|alias|shell)\b`)
+	justKeyword = regexp.MustCompile(`^(set|export|unexport|import|mod|alias|shell)\s`)
 	recipeName  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
 	invocation  = []*regexp.Regexp{
 		regexp.MustCompile(`bootstrap\.go\s+([A-Za-z][A-Za-z0-9_-]*)`),

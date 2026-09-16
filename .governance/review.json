@@ -1,148 +1,56 @@
 {
   "schema_version": 1,
-  "fingerprint": "47deb3ee9190b097db91d7b14ab096bdc093ebd20d7af23aae31ba38211b2d70",
-  "reviewer": "independent-architecture-reviewer-dsh-round3",
+  "fingerprint": "756f905c2f320dbba7902283df16644720910875a07701b216cd0d8bb2817883",
+  "reviewer": "independent-architecture-reviewer-dsh-round4",
   "independent": true,
   "scope": [
     "internal/governance/recipes.go",
     "internal/governance/recipes_test.go",
-    "cmd/ledger-tool/main.go",
-    "cmd/ledger-tool/main_test.go",
-    "governance.json",
     "justfile",
+    "README.md",
     ".github/workflows/ci.yml",
+    "governance.json",
     "docs/contracts.md",
-    "README.md"
+    "templates/skills/ledger-architecture-review.md"
   ],
   "findings": [
     {
-      "severity": "P2",
+      "severity": "P3",
       "file": "internal/governance/recipes.go",
-      "line": 160,
-      "rule": "A gate counts as runnable only when a recipe actually executes it; a textual mention inside a string must satisfy neither rule (b) nor rule (c), and must not fail rule (a).",
-      "trigger": "readJustfile applies unanchored regexes to every indented body line (recipes.go:159-163), so text inside a quoted argument is treated as an invocation. Reproduced on a copy of this repository: replacing the check recipe body with '@echo \"run: go run ./cmd/ledger-tool check\"' makes just run nothing (just --dry-run check prints only the echo, just check exits 0) while recipes-check exits 0, because the mention marks check as reached and check then marks policy-check, recipes-check, security, format-check, test, coverage-check, vet and build as reached through @ledger-tool delegation. The mirror case also fails: a docs recipe whose body is '@echo \"regenerate with: go run ./tool/bootstrap.go refresh-docs\"' is rejected with 'recipe docs invokes unknown command refresh-docs' although nothing is invoked.",
-      "impact": "The new honesty gate reports success for an entrypoint that runs no gate at all (and rejects harmless documentation lines), so a green recipes-check no longer proves the agreement it is documented to prove (docs/contracts.md:44, README.md:39).",
-      "recommendation": "Recognise an invocation only when the token sequence is the command word of a shell line rather than text inside quotes or arguments, and add both a negative test (echo-only recipe must fail) and a positive test (docs recipe quoting a command name must pass).",
-      "resolved": false
-    },
-    {
-      "severity": "P2",
-      "file": "internal/governance/recipes.go",
-      "line": 27,
-      "rule": "Every justfile form that just executes and that runs a ledger-tool command must be recognised, so rule (b)/(c) cannot fail on a legitimate entrypoint.",
-      "trigger": "Only three literal text shapes are recognised (recipes.go:25-29). Reproduced in a copy of this repository: a recipe whose body is a backslash continuation of 'go run ./cmd/ledger-tool' plus 'check', a recipe using a just variable ('tool := \"go run ./cmd/ledger-tool\"' then '{{tool}} check'), and a recipe running a built binary ('bin/ledger-tool check') all execute the real gate (just --dry-run check prints the resolved command), yet recipes-check fails with 'CI runs check but no just recipe reaches it'. '@ledger-tool --root . gated' is likewise unrecognised although the cmd/ledger-tool pattern does tolerate '--root', so the same global flag is accepted in one form and not the other.",
-      "impact": "A valid developer entrypoint cannot pass check, and the message blames CI absence instead of the unsupported syntax, so maintainers are sent to the wrong file.",
-      "recommendation": "Normalise just line continuations and variable interpolation before matching, accept the documented global --root flag for every ledger-tool form, and report an explicit unsupported-recipe-form error at justfile:LINE instead of an unreachable-command error.",
-      "resolved": false
-    },
-    {
-      "severity": "P2",
-      "file": "internal/governance/recipes.go",
-      "line": 63,
-      "rule": "Rule (a) must cover every recipe body that invokes the CLI, and an accepted invocation must be resolvable (an entrypoint that cannot run must fail, per docs/contracts.md:44).",
-      "trigger": "Rule (a) only inspects matched textual forms, and a matched form is never checked for resolvability. Reproduced: a policy command gated with a justfile recipe whose only body is 'go run ./tool/bootstrap.go gated' (no tool/ directory - exactly the shape the new tests call aligned, recipes_test.go:31) makes recipes-check exit 0 while just gated fails with 'stat ./tool/bootstrap.go: no such file or directory'. A body line 'go run ./cmd/ledger-tool --root=. typo-command' and a backslash-continued 'typo-command' body also pass, although the CLI itself answers 'blocked: command \"typo-command\" is not configured'.",
-      "impact": "The gate certifies entrypoints that cannot run and misses misspelled commands, contradicting README.md:39 ('which gates exist and are runnable') and the documented purpose of the command.",
-      "recommendation": "For each recognised invocation require the referenced path/package to exist and the command to resolve in the built-in plus configured set, and treat a CLI-looking token that the patterns cannot parse as a finding rather than ignoring it.",
-      "resolved": false
-    },
-    {
-      "severity": "P2",
-      "file": "internal/governance/recipes.go",
-      "line": 118,
-      "rule": "Rule (c) (every configured command is reachable from a recipe) must mean what docs/contracts.md:44 states, or the documentation must state the delegation exemption used by the implementation.",
-      "trigger": "Reachability is computed over @ledger-tool delegation edges (recipes.go:69-89) and the same set is consumed by rule (c) (recipes.go:118-122), so a configured command needs no recipe of its own. Reproduced: with a policy whose check step is [\"@ledger-tool\",\"gated\"] and a justfile containing only a check recipe that runs check, recipes-check exits 0 while just --summary lists no gated recipe, so the developer cannot run the declared gate. The docs sentence names delegation only for the workflow rule and says configured commands must be reachable from a recipe.",
-      "impact": "A command declared in governance.json can stay non-runnable by a developer while recipes-check reports agreement; there is also no documented, recorded way to declare a command intentionally internal, unlike the command_migrations escape used elsewhere in the policy.",
-      "recommendation": "Either document delegation for rule (c) explicitly (including that 'just <command>' may not exist) or require direct reachability with an explicit recorded exemption in the spirit of command_migrations.",
+      "line": 23,
+      "rule": "The justfile reader must not discard a recipe header that just accepts and runs, so rule (a) sees every body that invokes the CLI and rules (b)/(c) see every real provider.",
+      "trigger": "`^(set|export|unexport|import|mod|alias|shell)\\s` still matches any of those words followed by whitespace, but just only treats a word as a keyword when the rest of the line is the matching statement. With just 1.54.0, `shell target:`, `set target:`, `export target:`, `unexport target:`, `import target:`, `mod target:`, `alias target:` and the same names with a default (`shell x=\"1\":`) are accepted as recipes named after the keyword (just --summary lists them, `just shell x` runs the body), while readJustfile drops the header and its body. Reproduced on a copy of this repository: (a) a policy whose configured command fuzz is provided only by `shell target:` makes recipes-check exit 1 with 'configured command fuzz is not reachable from any just recipe' although `just --dry-run shell x` resolves that gate; (b) a `set deploy:` recipe whose body runs `typo-command` (the CLI answers 'blocked: command \"typo-command\" is not configured', exit 1) leaves recipes-check exiting 0. 'shell' is not a just statement keyword at all, it only occurs after `set`, so its presence in the alternation is unjustified.",
+      "impact": "The two failure directions this change set out to remove survive for keyword-named recipes that take parameters: a runnable gate is reported as unreachable (a blocking failure for such a repository) and a broken or misspelled invocation inside such a recipe is certified as clean.",
+      "recommendation": "Recognise the keyword statements themselves instead of 'keyword plus whitespace' (for example `^(set|export)\\s+\\S+\\s*:=`, `^alias\\s+\\S+\\s*:=`, `^unexport\\s+\\S`, `^import\\??\\s`, `^mod\\??\\s`), drop `shell` from the keyword set, and add a regression case for a parameterized recipe named after a keyword (`shell x=\"1\":`) beside the existing `*-check` cases.",
       "resolved": false
     },
     {
       "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 187,
-      "rule": "Rule (b) must be evaluated on what a workflow executes, not on any occurrence of the text in the file.",
-      "trigger": "ciCommands applies the regexes to the whole YAML file (recipes.go:186-190). Reproduced: a commented-out step ('# disabled for now: go run ./cmd/ledger-tool mutation-check') makes recipes-check fail with 'CI runs mutation-check but no just recipe reaches it' although CI runs nothing, while a real gate written as './bin/ledger-tool mutation-check', inside a '|' block with a backslash continuation, or inside a composite action (.github/actions/*/action.yml) is invisible and the check exits 0 with no recipe anywhere.",
-      "impact": "Both directions are wrong: planned or disabled steps create phantom requirements, and gates that only CI (or a composite action) runs can remain unreproducible by a developer - the second half of the documented rule.",
-      "recommendation": "Parse the workflow YAML, inspect only run: scalars of steps (including referenced composite actions), and report file:line for both the phantom and the missing-recipe direction.",
+      "file": "justfile",
+      "line": 5,
+      "rule": "A newly documented public surface must be verifiable by a gate, or the documentation must state that it is convention only.",
+      "trigger": "README.md:57 now promises that `just --list` shows exactly `check`, `test` and `format-check` and that new recipes stay private, but nothing in the repository reads recipe visibility. recipes-check ignores attribute lines entirely: in a copy of this repository, stripping all 14 `[private]` lines still exits 0, and appending a public `extra:` recipe leaves `go run ./cmd/ledger-tool --root . check` green while `just --list` prints check, extra, format-check, test. recipes_test.go only ever parses fixtures it writes itself, so no test reads the repository justfile, and the README sentence is prose.",
+      "impact": "The tiering has no regression protection: the public surface can drift away from the README, or a recipe the README calls private can become public, without any failing check, and 'new recipes stay private until a daily need is proven' is unenforced advice presented as a repository rule.",
+      "recommendation": "Derive the non-private recipe set in recipes-check (or in a governance test) and fail when it differs from the documented three, and add a fixture test proving a recipe preceded by an attribute line stays reachable; otherwise mark README.md:57 as convention rather than a checked rule.",
       "resolved": false
     },
     {
       "severity": "P3",
       "file": "internal/governance/recipes.go",
       "line": 23,
-      "rule": "Recipe headers must not be discarded merely because their name starts with characters that also begin a just configuration keyword.",
-      "trigger": "justKeyword ends in \\b (recipes.go:23), which matches before '-', so 'mod-check:', 'shell-check:', 'alias-check:', 'import-check:' and 'export-check:' are treated as configuration lines and dropped. Reproduced: with configured command gated and a justfile whose only recipe is 'mod-check:' running it, recipes-check fails with 'configured command gated is not reachable from any just recipe', although just --summary lists mod-check and just mod-vet runs its gate in a repository copy. A bogus CLI command inside a 'mod-verify:' body is also never reported.",
-      "impact": "Real recipes beginning with mod-, shell-, alias-, import- or export- become invisible: false failures for the gates they provide and a rule-(a) blind spot for the commands they invoke. 'shell' is not even a standalone just statement (it only follows set).",
-      "recommendation": "Require genuine keyword syntax after the keyword (for example whitespace or ':=' plus an alias-specific shape) instead of a word boundary, drop 'shell' from the keyword set, and add a test using a mod-* or shell-* recipe name.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 209,
-      "rule": "Recipe headers using just's string escapes must parse, and a header-like line that cannot be parsed must produce a diagnostic instead of silently dropping the recipe and its body.",
-      "trigger": "The quote scanner ignores backslash escapes (recipes.go:199-208), so a legitimate header such as a parameter default whose double-quoted value contains an escaped double quote is not recognised. Reproduced: that header followed by a body invoking typo-command makes recipes-check exit 0 (just --summary lists the recipe, so just accepts it); if the same recipe were the only provider of a configured command, the identical file would instead fail as unreachable.",
-      "impact": "Valid recipes disappear from the model, producing either a rule-(a) blind spot or a misleading unreachable error, with no message explaining that the header was dropped.",
-      "recommendation": "Honour backslash escapes inside double-quoted strings and emit an explicit unparsed-recipe-header diagnostic at justfile:LINE when a column-0 line ends with ':' but cannot be parsed.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 104,
-      "rule": "The documented dependency traversal must be observable in behaviour, otherwise it is untested decoration.",
-      "trigger": "Every parsed recipe header is registered in sheet.commands (recipes.go:149-152) and all of those keys are used as traversal roots (recipes.go:104-106), so a command run by any recipe is reached regardless of dependencies; deleting the dependency loop (recipes.go:97-99) changes no outcome. The test named 'dependency chain counts' (recipes_test.go:43) uses a fixture in which each recipe runs its own command, so it passes for an unrelated reason and cannot catch such a regression.",
-      "impact": "The 'through recipe dependencies' clause of docs/contracts.md:44 is unobservable and has no regression coverage.",
-      "recommendation": "Decide and document the intended root set (for example only default and explicitly named entrypoint recipes count as roots) and add a case where a command is reached only through a dependency edge, or remove the clause and rename the test.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes_test.go",
-      "line": 31,
-      "rule": "Tests must assert the contract (agreement, runnability, discovery) rather than mirror the implementation's regexes.",
-      "trigger": "Fixtures express recipes as 'go run ./tool/bootstrap.go <command>' where no such file exists (recipes_test.go:13,31,39-45), so the suite certifies an entrypoint that cannot run; statement coverage is otherwise near-total (recipes.go 100% except ciCommands 93.8%), and the 'official workflow forms' case (line 39) exercises only '--root .'. No test covers echo-only recipes, continuation/variable/built-binary forms, keyword-prefixed names, escaped quotes, import/mod/.justfile discovery, workflow comments or composite actions, or a typo in a policy delegation.",
-      "impact": "Every defect recorded in this report corresponds to a missing case, so a regression in any rule's real semantics would pass the suite while the coverage gate stays green.",
-      "recommendation": "Add negative cases for each accepted just and workflow form, and at least one test that resolves or executes the invocation it accepts instead of only matching harness-shaped text.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 42,
-      "rule": "The entrypoint the check requires must be the entrypoint just actually resolves.",
-      "trigger": "readJustfile opens exactly <root>/justfile (recipes.go:42) and treats import/mod as inert keywords (recipes.go:139-142). Reproduced: a repository whose file is '.justfile' fails with 'justfile is required for the documented entrypoint' although just --summary resolves it; 'import gates.just' and 'mod gates' produce 'configured command gated is not reachable from any just recipe' although just --summary lists the imported or module recipe (gates::gated). A capitalised Justfile fails the same way on case-sensitive Linux runners; that variant could not be reproduced here because this host's filesystem is case-insensitive.",
-      "impact": "Repositories using just's documented entrypoint names or its composition features fail check on a false premise, with a message that misstates the cause.",
-      "recommendation": "Resolve the justfile with just's documented search order and follow import/mod files, or explicitly document the unsupported composition and diagnose it as unsupported rather than absent.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 14,
-      "rule": "The built-in command set must not drift from the CLI dispatch surface.",
-      "trigger": "builtinCommands (recipes.go:14-20) hand-duplicates the dispatch switch in cmd/ledger-tool/main.go:58-190 plus the pre-switch version case. The two lists agree today (20 switch cases plus version, verified mechanically), but no test binds them: cmd/ledger-tool/main_test.go:58 only exercises the dispatch list.",
-      "impact": "A new CLI command added without editing recipes.go would make valid recipes fail as 'unknown command', and a removed command would keep being accepted, so rule (a) can silently disagree with the CLI.",
-      "recommendation": "Expose the dispatchable command names from one place (a package-level registry consumed by both the switch and RecipesCheck) or add a test that enumerates the dispatch surface and compares it with builtinCommands.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 64,
-      "rule": "Failure messages must locate the offending file, line and cause precisely enough to act on.",
-      "trigger": "The check returns at the first problem (recipes.go:61-67 and 113-122) with no file or line, and its wording asserts absence when the cause is an unsupported form: a wrapped but working check recipe yields 'CI runs check but no just recipe reaches it', and '.justfile' yields 'justfile is required for the documented entrypoint'. In the dead-gate direction no message is produced at all.",
-      "impact": "A repository with several disagreements needs one run per problem, and the misleading text directs maintainers to the wrong file or to the wrong rule.",
-      "recommendation": "Collect all findings in one run, attach justfile:LINE or workflow:LINE, and distinguish unparsed/unsupported recipe or workflow forms from commands that are genuinely not referenced.",
-      "resolved": false
+      "rule": "Recipe headers must not be discarded merely because their name starts with the characters of a just configuration keyword (the previous round's P3 at this line).",
+      "trigger": "Base revision 4854d6f used `^(set|export|unexport|import|mod|alias|shell)\\b`, so `-` satisfied the word boundary and `shell-check:`, `export-currencies app:`, `mod-check:`, `alias-check:`, `import-check:`, `unexport-check:`, `set-check:` plus the parameterless `set:`, `import:`, `mod:`, `alias:`, `export:` and `shell:` were dropped as configuration lines.",
+      "impact": "Closed by this change: the `\\s` form parses those headers exactly as just does. Proven by reverting only that token in a scratch copy, where `go test ./internal/governance/` fails with 'recipe export-currencies not parsed: map[check:[]] / map[check:[check]]' and passes (exit 0) with the change.",
+      "recommendation": "No action required; retained so the previous round's finding is recorded as closed. The residual keyword-name gap is tracked as the open finding above.",
+      "resolved": true
     }
   ],
   "limitations": [
-    "Local-only delivery by explicit user decision: nothing was pushed and no hosted CI ran. The Linux and Windows runners in .github/workflows/ci.yml were not executed; all reproduction was on macOS 15 (arm64) with the local Go toolchain (go1.26.2) and just 1.54.0.",
-    "Reviewer identity and independence are asserted in this artifact, not cryptographically proven; the tool can only validate schema and fingerprint freshness.",
-    "No P0/P1 was recorded deliberately: the change adds a check and removes none, CI still runs the real gates through 'go run ./cmd/ledger-tool --root . check', and every defect above limits the sensitivity or correctness of the new advisory check (or falsely rejects valid input). If the maintainers treat 'a documented gate that an echo-only recipe satisfies' as blocking, findings at recipes.go:160 and recipes.go:63 should be promoted to P1 and fixed before delivery - review-check itself refuses unresolved P0/P1, so that promotion requires a code fix, not an artifact edit.",
-    "The capitalised 'Justfile' discovery gap is derived from recipes.go:42 and just's documented search order; it could not be reproduced locally because this host's filesystem is case-insensitive, so only the '.justfile', import and mod variants were observed empirically.",
-    "The security steps ran successfully in this environment (gitleaks 8.30.1 and govulncheck 1.8.0 found nothing, network and module cache available); no offline replay was attempted, so an air-gapped run remains unverified.",
-    "The full check was executed end to end (exit 0) and the fingerprint re-verified as 47deb3ee9190b097db91d7b14ab096bdc093ebd20d7af23aae31ba38211b2d70 before and after, but coverage numbers were taken from the repository's own test and coverage-check steps rather than recomputed independently.",
-    "Consumer repositories ledger/ and ledger-app/ justfiles were read to ground realistic layouts, but their own check runs and policies were not executed because they are outside this diff."
+    "Local-only delivery by explicit user decision: nothing was pushed and no hosted CI ran. The ubuntu-latest and windows-latest jobs in .github/workflows/ci.yml were not executed; all verification was on macOS 26.5.1 (arm64) with go1.26.6 and just 1.54.0.",
+    "Reviewer identity and independence are asserted in this artifact, not cryptographically proven; review-check validates schema and fingerprint freshness only.",
+    "The security step required network and completed here (gitleaks 8.30.1 and govulncheck 1.8.0 against the live vulnerability database found nothing); no offline replay was attempted, so an air-gapped run remains unverified.",
+    "`[private]` on recipes needs just >= 1.9.0 (2022-11-25, casey/just#1422); doctor only requires `just --version` to exit zero and the repository pins no minimum just version, and no just older than 1.54.0 was exercised, so older-just behaviour is inferred from the upstream changelog rather than measured.",
+    "Reproductions and negative controls were run on copies under /tmp; the reviewed working tree was not modified except for this artifact, and the fingerprint was re-verified as unchanged after the write.",
+    "This round reviews the uncommitted change against base 4854d6f. The previous round's findings against recipes.go:25-29, 42, 63, 64, 104, 118, 160, 187 and 199-209 and recipes_test.go:31 concern code this diff does not touch; they were not re-adjudicated here (two of them were incidentally re-observed on the current tree: imported and module recipes are still invisible to the model, and invocation text inside a quoted echo is still accepted), and this file supersedes the earlier artifact only for fingerprint freshness."
   ]
 }

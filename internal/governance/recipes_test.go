@@ -105,14 +105,29 @@ this line is not a recipe
 check:
     go run ./tool/bootstrap.go check
 
+# recipe names that merely start with a configuration keyword
+export-currencies app:
+    go run ./tool/bootstrap.go currency --app {{app}}
+
+mod-check:
+    go run ./tool/bootstrap.go mod-check
+
+shell-check:
+    go run ./tool/bootstrap.go shell-check
+
 alias c := check
 `)
 	sheet, e := readJustfile(filepath.Join(root, "justfile"))
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(sheet.deps) != 1 || len(sheet.commands["check"]) != 1 || sheet.commands["check"][0] != "check" {
-		t.Fatalf("parsed %v / %v", sheet.deps, sheet.commands)
+	for _, name := range []string{"check", "export-currencies", "mod-check", "shell-check"} {
+		if len(sheet.commands[name]) != 1 {
+			t.Fatalf("recipe %s not parsed: %v / %v", name, sheet.deps, sheet.commands)
+		}
+	}
+	if len(sheet.commands) != 4 {
+		t.Fatalf("parsed %d recipes, want 4: %v", len(sheet.commands), sheet.deps)
 	}
 }
 
