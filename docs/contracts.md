@@ -41,6 +41,8 @@ Coverage inventory must include eligible production files even when never execut
 
 `skills-check [--templates DIR]` requires every template in the pinned bundle to exist at `.agents/skills/<name>/SKILL.md` byte for byte, so a consumer copy cannot drift from the shared procedure. Additional consumer-only skills are allowed; templates are located beside the executable unless `--templates` names a directory.
 
+`recipes-check` compares the `justfile`, `governance.json` and the workflows: a recipe may only invoke a built-in or configured command, every command a workflow runs directly must be reachable from a recipe (directly, through recipe dependencies or through `@ledger-tool` delegation inside a configured command), and every configured command must be reachable from a recipe. An entrypoint that advertises a gate which cannot run, or a gate that CI enforces but a developer cannot reproduce, fails here.
+
 The bundle launcher verifies the archive digest and then refuses to continue with an actionable `blocked:` message when the bundled module requires a newer Go than the local toolchain and `GOTOOLCHAIN` forbids downloading it. Treat that as a blocked capability, not as a skipped check: install the pinned toolchain or provide network access.
 
 `version-check --pattern REGEX -- COMMAND ...` runs the actual command, requires a zero exit status and matching stdout/stderr, and rejects empty-match regexes. It has a 30-second deadline and a one-MiB output bound. A version entry is evidence of installed capability, not an installer or authorization to upgrade the global environment.

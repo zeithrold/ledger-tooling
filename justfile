@@ -8,6 +8,21 @@ default:
 check:
     go run ./cmd/ledger-tool check
 
+recipes-check:
+    go run ./cmd/ledger-tool recipes-check
+
+build:
+    go run ./cmd/ledger-tool build
+
+security-secrets:
+    go run ./cmd/ledger-tool security-secrets
+
+security-dependencies:
+    go run ./cmd/ledger-tool security-dependencies
+
+commit-check title:
+    go run ./cmd/ledger-tool commit-check {{if os() == "windows" { "'" + replace(title, "'", "''") + "'" } else { quote(title) }}}
+
 test:
     go run ./cmd/ledger-tool test
 

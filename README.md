@@ -36,6 +36,7 @@ The tool does not replace Flutter/Dart, Go, Docker or platform SDKs. macOS, Linu
 | `review-check --file .governance/review.json` | Reject missing, stale or blocking independent-review evidence |
 | `commit-check 'fix(scope): summary'` | Validate a Conventional Commit/PR title |
 | `skills-check [--templates DIR]` | Require consumer skill copies to match the pinned templates byte for byte |
+| `recipes-check` | Require `justfile`, `governance.json` and the workflows to agree on which gates exist and are runnable |
 | `generate-check --output PATH -- COMMAND ...` | Regenerate in an isolated copy and compare output |
 | `isolated-run --include PATH -- COMMAND ...` | Run a tool against explicit copied inputs, without developer config |
 | `currency --check` | Verify backend currency source hashes and generated artifacts |

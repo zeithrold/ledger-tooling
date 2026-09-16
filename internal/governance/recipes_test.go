@@ -1,0 +1,143 @@
+package governance
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func recipesFixture(t *testing.T, justfile, workflow string) string {
+	t.Helper()
+	root := t.TempDir()
+	put(t, root, "governance.json", `{"schema_version":1,"kind":"go","commands":{"check":{"steps":[{"argv":["@ledger-tool","security"]}]},"security":{"steps":[{"argv":["go","vet","./..."]}]},"fuzz":{"steps":[{"argv":["go","test","./..."]}]}}}`)
+	put(t, root, "justfile", justfile)
+	if workflow != "" {
+		put(t, root, ".github/workflows/ci.yml", workflow)
+	}
+	return root
+}
+
+func loadPolicy(t *testing.T, root string) Config {
+	t.Helper()
+	c, e := Load(root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return c
+}
+
+func TestRecipesCheck(t *testing.T) {
+	complete := "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n"
+	for _, tc := range []struct {
+		name     string
+		justfile string
+		workflow string
+		wantErr  string
+	}{
+		{name: "aligned", justfile: complete, workflow: "run: go run ./tool/bootstrap.go check\n"},
+		{name: "official workflow forms", justfile: complete, workflow: "run: go run ./cmd/ledger-tool --root . check\nrun: go run ./cmd/ledger-tool security\n"},
+		{name: "unknown command in recipe", justfile: "check:\n    go run ./tool/bootstrap.go check\n\ndeploy:\n    go run ./tool/bootstrap.go deploy-production\n", wantErr: "invokes unknown command"},
+		{name: "unreachable configured command", justfile: "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n", wantErr: "fuzz is not reachable"},
+		{name: "ci command without recipe", justfile: "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n", workflow: "run: go run ./tool/bootstrap.go mutation-check --report x\n", wantErr: "CI runs mutation-check"},
+		{name: "dependency chain counts", justfile: "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n\nquality: security\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n", workflow: ""},
+		{name: "defaults with separators", justfile: "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n\nreview-check file=\".governance/review.json\":\n    go run ./tool/bootstrap.go review-check --file {{file}}\n", workflow: "run: go run ./tool/bootstrap.go review-check --file .governance/review.json\n"},
+		{name: "delegated command counts", justfile: "check:\n    go run ./tool/bootstrap.go check\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n", workflow: ""},
+		{name: "missing justfile", justfile: "", workflow: "", wantErr: "justfile is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := recipesFixture(t, tc.justfile, tc.workflow)
+			if tc.justfile == "" {
+				if e := os.Remove(filepath.Join(root, "justfile")); e != nil {
+					t.Fatal(e)
+				}
+			}
+			e := RecipesCheck(root, loadPolicy(t, root))
+			if tc.wantErr == "" {
+				if e != nil {
+					t.Fatal(e)
+				}
+				return
+			}
+			if e == nil || !strings.Contains(e.Error(), tc.wantErr) {
+				t.Fatalf("want %q, got %v", tc.wantErr, e)
+			}
+		})
+	}
+}
+
+func TestParseRecipeHeader(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		name string
+		deps []string
+		ok   bool
+	}{
+		{line: "check:", name: "check", ok: true},
+		{line: "review-check file=\".governance/review.json\":", name: "review-check", ok: true},
+		{line: "deploy url=\"https://example.test/a\" note='a:b':", name: "deploy", ok: true},
+		{line: "quality: security fuzz # trailing comment", name: "quality", deps: []string{"security", "fuzz"}, ok: true},
+		{line: "value := \"not a recipe\"", ok: false},
+		{line: "set shell := [\"sh\", \"-cu\"]", ok: false},
+		{line: "this is not a recipe", ok: false},
+		{line: ": deps-only", ok: false},
+		{line: "1invalid: target", ok: false},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			name, deps, ok := parseRecipeHeader(tc.line)
+			if ok != tc.ok || name != tc.name || strings.Join(deps, ",") != strings.Join(tc.deps, ",") {
+				t.Fatalf("got %q %v %t", name, deps, ok)
+			}
+		})
+	}
+}
+
+func TestReadJustfileSkipsConfiguration(t *testing.T) {
+	root := t.TempDir()
+	put(t, root, "justfile", `set shell := ["sh", "-cu"]
+export GOTOOLCHAIN := "go1.26.6"
+
+# a comment
+    indented before any recipe
+
+this line is not a recipe
+
+check:
+    go run ./tool/bootstrap.go check
+
+alias c := check
+`)
+	sheet, e := readJustfile(filepath.Join(root, "justfile"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(sheet.deps) != 1 || len(sheet.commands["check"]) != 1 || sheet.commands["check"][0] != "check" {
+		t.Fatalf("parsed %v / %v", sheet.deps, sheet.commands)
+	}
+}
+
+func TestCICommandsSources(t *testing.T) {
+	root := t.TempDir()
+	put(t, root, ".github/workflows/ci.yaml", "run: go run ./tool/bootstrap.go check\n")
+	put(t, root, ".github/workflows/notes.txt", "run: go run ./tool/bootstrap.go ignored\n")
+	put(t, root, ".github/workflows/nested/ci.yml", "run: go run ./tool/bootstrap.go also-ignored\n")
+	commands, e := ciCommands(filepath.Join(root, ".github", "workflows"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(commands) != 1 || !commands["check"] {
+		t.Fatalf("workflow commands %v", commands)
+	}
+	missing, e := ciCommands(filepath.Join(root, "absent"))
+	if e != nil || len(missing) != 0 {
+		t.Fatalf("%v %v", missing, e)
+	}
+}
+
+func TestRecipesCheckReportsUnreadableWorkflows(t *testing.T) {
+	root := recipesFixture(t, "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n", "")
+	put(t, root, ".github/workflows", "not a directory\n")
+	if e := RecipesCheck(root, loadPolicy(t, root)); e == nil {
+		t.Fatal("unreadable workflow directory accepted")
+	}
+}

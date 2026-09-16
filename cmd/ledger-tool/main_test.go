@@ -39,6 +39,7 @@ func TestDispatch(t *testing.T) {
 		}
 	}
 	write("governance.json", `{"schema_version":1,"kind":"go","commands":{"custom":{"steps":[{"argv":["go","version"]}]}},"tools":{"go":["go","version"]}}`)
+	write("justfile", "custom:\n    go run ./tool/bootstrap.go custom\n")
 	write(".gitignore", "build/\n")
 	c := exec.Command("git", "add", ".")
 	c.Dir = root
@@ -54,7 +55,7 @@ func TestDispatch(t *testing.T) {
 		args []string
 		fail bool
 	}{
-		{[]string{"version"}, false}, {[]string{"fingerprint"}, false}, {[]string{"doctor"}, false}, {[]string{"custom"}, false}, {[]string{"changes", "--json"}, true}, {[]string{"changes", "--github-output", filepath.Join(root, "build", "out")}, false}, {[]string{"skills-check"}, true}, {[]string{"commit-check", "fix(tool): validate commands"}, false}, {[]string{"commit-check", "invalid"}, true}, {[]string{"coverage-check"}, true}, {[]string{"review-check"}, true}, {[]string{"generate-check"}, true}, {[]string{"isolated-run"}, true}, {[]string{"debug-start"}, true}, {[]string{"debug-start", "sample"}, false}, {[]string{"debug-run"}, true}, {[]string{"debug-run", "missing", "unit"}, true}, {[]string{"debug-verify", "missing", "unit"}, true}, {[]string{"debug-report"}, true}, {[]string{"debug-report", "missing"}, true}, {[]string{"ui-report"}, true}, {[]string{"mutation-check", "--report", "missing.json"}, true}, {[]string{"unknown"}, true}, {[]string{"currency", "--app-check"}, true},
+		{[]string{"version"}, false}, {[]string{"fingerprint"}, false}, {[]string{"doctor"}, false}, {[]string{"custom"}, false}, {[]string{"changes", "--json"}, true}, {[]string{"changes", "--github-output", filepath.Join(root, "build", "out")}, false}, {[]string{"skills-check"}, true}, {[]string{"recipes-check"}, false}, {[]string{"recipes-check", "extra"}, true}, {[]string{"commit-check", "fix(tool): validate commands"}, false}, {[]string{"commit-check", "invalid"}, true}, {[]string{"coverage-check"}, true}, {[]string{"review-check"}, true}, {[]string{"generate-check"}, true}, {[]string{"isolated-run"}, true}, {[]string{"debug-start"}, true}, {[]string{"debug-start", "sample"}, false}, {[]string{"debug-run"}, true}, {[]string{"debug-run", "missing", "unit"}, true}, {[]string{"debug-verify", "missing", "unit"}, true}, {[]string{"debug-report"}, true}, {[]string{"debug-report", "missing"}, true}, {[]string{"ui-report"}, true}, {[]string{"mutation-check", "--report", "missing.json"}, true}, {[]string{"unknown"}, true}, {[]string{"currency", "--app-check"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.args[0], func(t *testing.T) {

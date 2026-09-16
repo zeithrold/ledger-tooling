@@ -97,6 +97,11 @@ func run(ctx context.Context, args []string) error {
 				return fmt.Errorf("skills-check: unexpected argument %q", args[0])
 			}
 			return g.SkillsCheck(root, templates)
+		case "recipes-check":
+			if len(args) > 0 {
+				return fmt.Errorf("recipes-check: unexpected argument %q", args[0])
+			}
+			return g.RecipesCheck(root, c)
 		case "changes":
 			base, args := option(args, "--base")
 			out, rest := option(args, "--github-output")
