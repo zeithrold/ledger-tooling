@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "kind": "go",
+  "coverage": {
+    "format": "go",
+    "profiles": [
+      "coverage/unit.out"
+    ],
+    "source_roots": [
+      "cmd",
+      "internal",
+      "bootstrap"
+    ],
+    "exclude": [
+
+    ],
+    "minimum": 70,
+    "incremental_minimum": 90
+  },
+  "commands": {
+    "check": {
+      "steps": [
+        {
+          "argv": [
+            "@ledger-tool",
+            "policy-check"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "security"
+          ],
+          "timeout_seconds": 1200
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "format-check"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "test"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "coverage-check"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "vet"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "build"
+          ]
+        }
+      ]
+    },
+    "format-check": {
+      "steps": [
+        {
+          "argv": [
+            "@ledger-tool",
+            "generate-check",
+            "--output",
+            "cmd",
+            "--",
+            "gofmt",
+            "-w",
+            "cmd"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "generate-check",
+            "--output",
+            "internal",
+            "--",
+            "gofmt",
+            "-w",
+            "internal"
+          ]
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "generate-check",
+            "--output",
+            "bootstrap",
+            "--",
+            "gofmt",
+            "-w",
+            "bootstrap"
+          ]
+        }
+      ]
+    },
+    "test": {
+      "steps": [
+        {
+          "argv": [
+            "go",
+            "test",
+            "-race",
+            "-count=1",
+            "-covermode=atomic",
+            "-coverpkg=./cmd/...,./internal/...,./bootstrap/...",
+            "-coverprofile=coverage/unit.out",
+            "./..."
+          ],
+          "timeout_seconds": 600
+        }
+      ]
+    },
+    "vet": {
+      "steps": [
+        {
+          "argv": [
+            "go",
+            "vet",
+            "./..."
+          ]
+        }
+      ]
+    },
+    "build": {
+      "steps": [
+        {
+          "argv": [
+            "go",
+            "build",
+            "./..."
+          ]
+        }
+      ]
+    },
+    "security-secrets": {
+      "description": "Scan an isolated source copy with fully redacted findings; no local environment files",
+      "steps": [
+        {
+          "argv": [
+            "@ledger-tool",
+            "isolated-run",
+            "--",
+            "go",
+            "run",
+            "-ldflags=-X github.com/zricethezav/gitleaks/v8/version.Version=8.30.1",
+            "github.com/zricethezav/gitleaks/v8@v8.30.1",
+            "dir",
+            "--redact=100",
+            "--no-banner",
+            "--ignore-gitleaks-allow",
+            "--report-format=json",
+            "--report-path={root}/build/secrets.json",
+            "."
+          ],
+          "timeout_seconds": 600
+        }
+      ]
+    },
+    "security-dependencies": {
+      "description": "Check reachable Go vulnerabilities against the current official vulnerability database",
+      "steps": [
+        {
+          "argv": [
+            "go",
+            "run",
+            "golang.org/x/vuln/cmd/govulncheck@v1.8.0",
+            "./..."
+          ],
+          "timeout_seconds": 600
+        }
+      ]
+    },
+    "security": {
+      "description": "Pinned security tools; network availability is required for dependency advisory data",
+      "steps": [
+        {
+          "argv": [
+            "@ledger-tool",
+            "security-secrets"
+          ],
+          "timeout_seconds": 600
+        },
+        {
+          "argv": [
+            "@ledger-tool",
+            "security-dependencies"
+          ],
+          "timeout_seconds": 600
+        }
+      ]
+    }
+  },
+  "debug_profiles": {
+    "unit": {
+      "steps": [
+        {
+          "argv": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "./..."
+          ],
+          "timeout_seconds": 300
+        }
+      ]
+    }
+  }
+}

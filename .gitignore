@@ -1,0 +1,9 @@
+/build/
+/coverage/
+/bin/
+/mutation-results/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

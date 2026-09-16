@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "fingerprint": "03e69b65544fa7f7827c6c77e673ede6c8d599e724f063eeaa8d672b94bdacdd",
+  "reviewer": "/root/debug_research",
+  "independent": true,
+  "scope": [
+    "cmd/ledger-tool command dispatch and evidence interfaces",
+    "internal/governance runner, platform processes, coverage, git changes and fingerprint",
+    "internal/governance debug evidence, UI report, isolated workspace and bundle",
+    "bootstrap source archive verification and extraction"
+  ],
+  "findings": [],
+  "limitations": [
+    "Reviewer-authored policy.go, policy tests, configuration and documentation are excluded; they require another independent reviewer.",
+    "GOCACHE=/tmp/ledger-tool-review-cache go test -race ./... passed on Go 1.26.6 macOS; Windows and Linux native runners were not executed.",
+    "Earlier debug-output race, initial Git base handling and tracked UI manifest self-reference findings were corrected and re-inspected.",
+    "The tracked UI manifest and final source-bundle changes passed targeted race tests after the earlier full-suite run.",
+    "JSON freshness and independence assertions do not authenticate reviewer identity or prove external CI execution."
+  ]
+}

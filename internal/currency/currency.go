@@ -1,0 +1,414 @@
+// Package currency generates and verifies the pinned offline CLDR reference pack.
+package currency
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+type object = map[string]any
+
+type policy struct {
+	CLDR       string            `json:"cldr_version"`
+	Default    string            `json:"default_locale"`
+	Legacy     object            `json:"legacy_locale_aliases"`
+	Currencies map[string]int    `json:"currencies"`
+	Locales    map[string]string `json:"locales"`
+	Sources    map[string]struct {
+		SHA string `json:"sha256"`
+	} `json:"sources"`
+}
+
+// Run generates a backend pack, checks it with --check, exports with --app PATH,
+// or independently checks an application checkout with --app-check.
+func Run(root string, args []string) error {
+	f := flag.NewFlagSet("currency", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	check := f.Bool("check", false, "verify generated output")
+	app := f.String("app", "", "application checkout")
+	appCheck := f.Bool("app-check", false, "verify application checkout independently")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 {
+		return errors.New("unexpected currency arguments")
+	}
+	if *appCheck {
+		if *app != "" || *check {
+			return errors.New("--app-check cannot be combined with --check or --app")
+		}
+		return verifyApp(root)
+	}
+	files, metadata, err := build(root)
+	if err != nil {
+		return err
+	}
+	packRoot, err := safePath(root, "reference/currencies")
+	if err != nil {
+		return err
+	}
+	if err = synchronize(packRoot, files, *check); err != nil {
+		return err
+	}
+	metadataPath, err := safePath(root, "internal/money/currencies.json")
+	if err != nil {
+		return err
+	}
+	if err = writeOrCheck(metadataPath, metadata, *check); err != nil {
+		return err
+	}
+	if *app != "" {
+		var contract struct {
+			Info struct {
+				Version string `json:"version"`
+			} `json:"info"`
+		}
+		contractPath, err := safePath(root, "internal/apicontract/v1/openapi.json")
+		if err != nil {
+			return err
+		}
+		if err = readJSON(contractPath, &contract); err != nil {
+			return err
+		}
+		if contract.Info.Version == "" {
+			return errors.New("missing backend contract revision")
+		}
+		var manifest object
+		if err = json.Unmarshal(files["manifest.json"], &manifest); err != nil {
+			return err
+		}
+		marker, err := encode(object{"schema_version": 1, "contract_revision": contract.Info.Version, "cldr_version": manifest["cldr_version"], "currency_pack_sha256": manifest["content_sha256"]})
+		if err != nil {
+			return err
+		}
+		appPackRoot, err := safePath(*app, "assets/reference/currencies")
+		if err != nil {
+			return err
+		}
+		if err = synchronize(appPackRoot, files, *check); err != nil {
+			return err
+		}
+		markerPath, err := safePath(*app, "assets/reference/contract.json")
+		if err != nil {
+			return err
+		}
+		if err = writeOrCheck(markerPath, marker, *check); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func encode(v any) ([]byte, error) {
+	var b bytes.Buffer
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	e.SetIndent("", "  ")
+	if err := e.Encode(v); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+func digest(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
+func readJSON(path string, v any) error {
+	b, e := os.ReadFile(path)
+	if e != nil {
+		return e
+	}
+	if e = json.Unmarshal(b, v); e != nil {
+		return fmt.Errorf("%s: %w", path, e)
+	}
+	return nil
+}
+func at(v object, keys ...string) object {
+	for _, k := range keys {
+		x, ok := v[k].(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = x
+	}
+	return v
+}
+func str(v any) string { s, _ := v.(string); return s }
+func safePath(root, name string) (string, error) {
+	if name == "" || strings.Contains(name, "\\") || !fs.ValidPath(name) {
+		return "", fmt.Errorf("invalid pack path %q", name)
+	}
+	base, e := filepath.Abs(root)
+	if e != nil {
+		return "", e
+	}
+	p := filepath.Join(base, filepath.FromSlash(name))
+	// Reject symlinks throughout the path, including existing parents of new files.
+	for cur := p; ; cur = filepath.Dir(cur) {
+		i, e := os.Lstat(cur)
+		if e == nil && i.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("symlink in pack path: %s", cur)
+		}
+		if e != nil && !errors.Is(e, os.ErrNotExist) {
+			return "", e
+		}
+		if cur == base {
+			break
+		}
+	}
+	return p, nil
+}
+func writeOrCheck(path string, b []byte, check bool) error {
+	if check {
+		actual, e := os.ReadFile(path)
+		if e != nil {
+			return e
+		}
+		if !bytes.Equal(actual, b) {
+			return fmt.Errorf("generated currency data differs: %s", path)
+		}
+		return nil
+	}
+	if e := os.MkdirAll(filepath.Dir(path), 0755); e != nil {
+		return e
+	}
+	return os.WriteFile(path, b, 0644)
+}
+func synchronize(root string, files map[string][]byte, check bool) error {
+	// Detect unexpected files before writes; never erase user files.
+	if e := filepath.WalkDir(root, func(path string, d fs.DirEntry, e error) error {
+		if errors.Is(e, os.ErrNotExist) && path == root {
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink in currency pack: %s", path)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name, e := filepath.Rel(root, path)
+		if e != nil {
+			return e
+		}
+		if _, ok := files[filepath.ToSlash(name)]; !ok {
+			return fmt.Errorf("unexpected currency pack file: %s", path)
+		}
+		return nil
+	}); e != nil {
+		return e
+	}
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		path, e := safePath(root, name)
+		if e != nil {
+			return e
+		}
+		if e = writeOrCheck(path, files[name], check); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+func build(root string) (map[string][]byte, []byte, error) {
+	var p policy
+	policyPath, pathErr := safePath(root, "reference/currency-policy.json")
+	if pathErr != nil {
+		return nil, nil, pathErr
+	}
+	if e := readJSON(policyPath, &p); e != nil {
+		return nil, nil, e
+	}
+	if p.CLDR != "48.0.0" || len(p.Currencies) != 148 || p.Default == "" || len(p.Locales) == 0 || len(p.Sources) == 0 {
+		return nil, nil, errors.New("invalid pinned currency policy")
+	}
+	sources, pathErr := safePath(root, "reference/cldr-48")
+	if pathErr != nil {
+		return nil, nil, pathErr
+	}
+	for name, meta := range p.Sources {
+		path, e := safePath(sources, name)
+		if e != nil {
+			return nil, nil, e
+		}
+		b, e := os.ReadFile(path)
+		if e != nil {
+			return nil, nil, e
+		}
+		if digest(b) != meta.SHA {
+			return nil, nil, fmt.Errorf("CLDR source changed: %s", name)
+		}
+	}
+	read := func(name string) (object, error) {
+		if _, ok := p.Sources[name+".json"]; !ok {
+			return nil, fmt.Errorf("unpinned CLDR source: %s", name)
+		}
+		var v object
+		e := readJSON(filepath.Join(sources, name+".json"), &v)
+		return v, e
+	}
+	data, e := read("currencyData")
+	if e != nil {
+		return nil, nil, e
+	}
+	fractions := at(data, "supplemental", "currencyData", "fractions")
+	catalog := object{}
+	codes := make([]string, 0, len(p.Currencies))
+	for code, digits := range p.Currencies {
+		if !regexp.MustCompile(`^[A-Z]{3}$`).MatchString(code) {
+			return nil, nil, fmt.Errorf("invalid currency: %s", code)
+		}
+		f := at(fractions, code)
+		if f == nil {
+			f = at(fractions, "DEFAULT")
+		}
+		if str(f["_digits"]) != fmt.Sprint(digits) {
+			return nil, nil, fmt.Errorf("unreviewed precision change: %s", code)
+		}
+		catalog[code] = object{"minor_units": digits}
+		codes = append(codes, code)
+	}
+	files := map[string][]byte{}
+	put := func(name string, v any) error {
+		b, e := encode(v)
+		if e == nil {
+			files[name] = b
+		}
+		return e
+	}
+	if e = put("catalog.json", object{"schema_version": 1, "cldr_version": p.CLDR, "currencies": catalog}); e != nil {
+		return nil, nil, e
+	}
+	locales := object{}
+	for locale, sourceLocale := range p.Locales {
+		source, e := read(sourceLocale)
+		if e != nil {
+			return nil, nil, e
+		}
+		currencies := at(source, "main", sourceLocale, "numbers", "currencies")
+		items := object{}
+		for _, code := range codes {
+			value := at(currencies, code)
+			display := str(value["displayName"])
+			symbol := code
+			if s, ok := value["symbol"]; ok {
+				symbol = str(s)
+			}
+			if display == "" || symbol == "" {
+				return nil, nil, fmt.Errorf("missing label: %s/%s", locale, code)
+			}
+			item := object{"display_name": display, "symbol": symbol}
+			if v, ok := value["symbol-alt-narrow"]; ok {
+				item["narrow_symbol"] = v
+			}
+			plurals := object{}
+			for k, v := range value {
+				if strings.HasPrefix(k, "displayName-count-") {
+					category := strings.TrimPrefix(k, "displayName-count-")
+					switch category {
+					case "zero", "one", "two", "few", "many", "other":
+						plurals[category] = v
+					default:
+						return nil, nil, fmt.Errorf("invalid plural category: %s", k)
+					}
+				}
+			}
+			if len(plurals) > 0 {
+				item["display_names_by_plural"] = plurals
+			}
+			items[code] = item
+		}
+		path := "locales/" + locale + ".json"
+		if _, e = safePath(root, path); e != nil {
+			return nil, nil, e
+		}
+		if e = put(path, object{"schema_version": 1, "locale": locale, "currencies": items}); e != nil {
+			return nil, nil, e
+		}
+		locales[locale] = object{"path": path, "source_locale": sourceLocale}
+	}
+	aliases, e := read("aliases")
+	if e != nil {
+		return nil, nil, e
+	}
+	aliases = at(aliases, "supplemental", "metadata", "alias")
+	languages := object{}
+	territories := object{}
+	for k, v := range at(aliases, "languageAlias") {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil, nil, errors.New("invalid language alias")
+		}
+		languages[k] = m["_replacement"]
+	}
+	for k, v := range at(aliases, "territoryAlias") {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil, nil, errors.New("invalid territory alias")
+		}
+		parts := strings.Fields(str(m["_replacement"]))
+		if len(parts) == 0 {
+			return nil, nil, errors.New("empty territory alias")
+		}
+		territories[k] = parts[0]
+	}
+	likely, e := read("likelySubtags")
+	if e != nil {
+		return nil, nil, e
+	}
+	parents, e := read("parentLocales")
+	if e != nil {
+		return nil, nil, e
+	}
+	if e = put("locale_rules.json", object{"schema_version": 1, "language_aliases": languages, "territory_aliases": territories, "likely_subtags": at(likely, "supplemental", "likelySubtags"), "parent_locales": at(parents, "supplemental", "parentLocales", "parentLocale")}); e != nil {
+		return nil, nil, e
+	}
+	licensePath, e := safePath(sources, "UNICODE-LICENSE.txt")
+	if e != nil {
+		return nil, nil, e
+	}
+	license, e := os.ReadFile(licensePath)
+	if e != nil {
+		return nil, nil, e
+	}
+	files["UNICODE-LICENSE.txt"] = license
+	hashes := map[string]string{}
+	for name, b := range files {
+		hashes[name] = digest(b)
+	}
+	encoded, e := encode(hashes)
+	if e != nil {
+		return nil, nil, e
+	}
+	// Preserve every policy source field in the manifest, including provenance URLs.
+	var rawPolicy object
+	if e = readJSON(policyPath, &rawPolicy); e != nil {
+		return nil, nil, e
+	}
+	if e = put("manifest.json", object{"schema_version": 1, "cldr_version": p.CLDR, "default_locale": p.Default, "legacy_locale_aliases": p.Legacy, "catalog": "catalog.json", "rules": "locale_rules.json", "locales": locales, "files": hashes, "content_sha256": digest(encoded), "sources": rawPolicy["sources"]}); e != nil {
+		return nil, nil, e
+	}
+	sort.Strings(codes)
+	metadata := make([]object, 0, len(codes))
+	for _, code := range codes {
+		metadata = append(metadata, object{"code": code, "minor_units": p.Currencies[code]})
+	}
+	b, e := encode(metadata)
+	return files, b, e
+}
