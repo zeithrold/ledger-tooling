@@ -27,6 +27,10 @@ var (
 		regexp.MustCompile(`cmd/ledger-tool\s+(?:--root\s+\S+\s+)?([A-Za-z][A-Za-z0-9_-]*)`),
 		regexp.MustCompile(`@ledger-tool\s+([A-Za-z][A-Za-z0-9_-]*)`),
 	}
+	// readDir is os.ReadDir by default. Tests substitute a failing
+	// implementation so the ReadDir error path is covered on Windows,
+	// where chmod does not deny directory reads the same way as Unix.
+	readDir = os.ReadDir
 )
 
 type recipeSheet struct {
@@ -178,7 +182,7 @@ func ciCommands(dir string) (map[string]bool, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("workflows path is not a directory: %s", dir)
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := readDir(dir)
 	if err != nil {
 		return nil, err
 	}

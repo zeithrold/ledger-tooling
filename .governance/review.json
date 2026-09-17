@@ -1,23 +1,20 @@
 {
   "schema_version": 1,
-  "fingerprint": "a7788a89f2781b441da530b52484302ec772dd62b89cf62927a0d552e2cfeaf4",
-  "reviewer": "independent-architecture-reviewer-ci-test-isolation",
+  "fingerprint": "a050c0dfdd475991f611ee59a6dc36f50c4e8ef17d43f0bebd16111fb5ed1953",
+  "reviewer": "independent-architecture-reviewer-windows-readdir-coverage-a0d02b",
   "independent": true,
   "scope": [
-    "cmd/ledger-tool/main_test.go",
-    "internal/governance/governance_test.go",
     "internal/governance/recipes.go",
     "internal/governance/recipes_test.go",
-    "policy-check LEDGER_BASE / LEDGER_BASE_REF isolation",
-    "safePath absolute-path rejection",
-    "RecipesCheck / ciCommands workflows path hardening"
+    "ciCommands ReadDir error path",
+    "package-local readDir test seam for Windows native coverage"
   ],
   "findings": [],
   "limitations": [
-    "Review is of the uncommitted working tree against base ff17e1b (origin/main). Hosted ubuntu-latest, macos-latest, and windows-latest CI were not executed by this reviewer.",
-    "Local darwin/arm64 verification with go1.26.6 passed for TestDispatch (including LEDGER_BASE/LEDGER_BASE_REF pollution), TestConfigurationAndPaths, TestRecipesCheck, TestRecipesCheckReportsUnreadableWorkflows, TestCICommandsSources, and TestCICommandsReportsUnreadableDirectory.",
-    "Windows absolute-path and workflows-file replacement behaviour was validated by code inspection against filepath.IsAbs / RemoveAll+WriteFile semantics; this host did not run a Windows runner.",
-    "TestCICommandsReportsUnreadableDirectory intentionally skips on Windows; chmod-based unreadable-directory coverage remains Unix-only.",
+    "Reviewed final diff origin/main (cba3123)...HEAD (f1e74b1) plus parent context ff17e1b for the Windows incremental-coverage failure mode; hosted windows-latest / macos-latest / ubuntu-latest CI were not executed by this reviewer.",
+    "Local Linux go test ./internal/governance/ -run 'TestCICommandsReportsUnreadableDirectory|TestRecipesCheck' -count=1 passed; Windows stub injection was validated by code inspection only on this host.",
+    "The unexported package-level readDir var is an acceptable narrow test seam (defaults to os.ReadDir; mutated only in the Windows branch of one test with Cleanup restore). Package tests do not use t.Parallel(); a future parallel caller of ciCommands while the stub is installed would race — not an actionable defect in this change.",
+    "Coverage thresholds, exclusions and baselines in governance.json are unchanged; this change strengthens Windows exercise of the error path rather than weakening the gate.",
     "Reviewer identity and independence are asserted in this artifact; review-check validates schema and fingerprint freshness only."
   ]
 }
