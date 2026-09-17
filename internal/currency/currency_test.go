@@ -41,6 +41,16 @@ func TestSynchronize(t *testing.T) {
 		t.Fatal("accepted extra file")
 	}
 }
+func TestDigestIgnoresCRLF(t *testing.T) {
+	lf := []byte("{\"a\":1}\n")
+	crlf := []byte("{\"a\":1}\r\n")
+	if digest(lf) != digest(crlf) {
+		t.Fatal("digest must ignore CRLF vs LF")
+	}
+	if digest(lf) == digest([]byte("{\"a\":2}\n")) {
+		t.Fatal("digest collapsed real content changes")
+	}
+}
 func TestUnsafePaths(t *testing.T) {
 	for _, p := range []string{"../escape", "/absolute", "a/../escape", "a\\escape", ""} {
 		if _, e := safePath(t.TempDir(), p); e == nil {
@@ -124,6 +134,20 @@ func TestGenerateExportAndCheck(t *testing.T) {
 	}
 	if e := Run(app, []string{"--app-check"}); e != nil {
 		t.Fatal(e)
+	}
+	// Simulate a Windows autocrlf checkout of the exported pack.
+	locale := filepath.Join(app, "assets/reference/currencies/locales/en.json")
+	lf, e := os.ReadFile(locale)
+	if e != nil {
+		t.Fatal(e)
+	}
+	crlf := bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n"))
+	putTest(t, locale, crlf)
+	if e = Run(app, []string{"--app-check"}); e != nil {
+		t.Fatal("CRLF checkout failed app-check:", e)
+	}
+	if e = Run(root, []string{"--check", "--app", app}); e != nil {
+		t.Fatal("CRLF checkout failed generate --check:", e)
 	}
 	original, e := os.ReadFile(filepath.Join(root, "reference/currencies/manifest.json"))
 	if e != nil {

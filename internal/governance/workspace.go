@@ -90,9 +90,11 @@ func CompareTree(a, b string) error {
 			if d.IsDir() {
 				return nil
 			}
+			// WalkDir only yields paths under dir, so Rel cannot fail here.
 			rel, _ := filepath.Rel(dir, p)
+			// Slash-form keys keep generate-check stable across Windows and Unix.
 			data, e := os.ReadFile(p)
-			m[rel] = data
+			m[filepath.ToSlash(rel)] = data
 			return e
 		})
 		if e != nil {
@@ -103,7 +105,8 @@ func CompareTree(a, b string) error {
 		return fmt.Errorf("generated file set differs")
 	}
 	for p, data := range left {
-		if !bytes.Equal(data, right[p]) {
+		// CRLF from a Windows checkout or tool rewrite is not content drift.
+		if !bytes.Equal(normalizeEndings(data), normalizeEndings(right[p])) {
 			return fmt.Errorf("generated output differs: %s", p)
 		}
 	}

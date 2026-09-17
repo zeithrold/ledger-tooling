@@ -329,9 +329,21 @@ func Coverage(root string, c CoverageConfig, base string, now time.Time) (Covera
 			report.Missing = append(report.Missing, f)
 		}
 	}
-	changes, e := ChangedLines(root, base)
+	// An unresolvable base (all-zero GitHub "before", orphan HEAD^, empty
+	// repository) has no prior revision to diff. Treating every line as
+	// incremental would turn the 90% changed-code gate into a second overall
+	// floor. Skip incremental enforcement; overall still applies. Classify
+	// keeps treating EMPTY as "all source affected" so suites still run.
+	ref, e := Base(root, base)
 	if e != nil {
 		return report, e
+	}
+	changes := map[string]map[int]bool{}
+	if ref != "EMPTY" {
+		changes, e = ChangedLines(root, base)
+		if e != nil {
+			return report, e
+		}
 	}
 	var executable map[string]map[int][]int
 	if c.Format == "go" {

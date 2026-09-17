@@ -1,56 +1,24 @@
 {
   "schema_version": 1,
-  "fingerprint": "756f905c2f320dbba7902283df16644720910875a07701b216cd0d8bb2817883",
-  "reviewer": "independent-architecture-reviewer-dsh-round4",
+  "fingerprint": "f2eef52900311c63d89f1e23c958c9e026e71d72f781fd1174c2e840a31b8920",
+  "reviewer": "independent-architecture-reviewer-windows-ci-line-endings",
   "independent": true,
   "scope": [
-    "internal/governance/recipes.go",
-    "internal/governance/recipes_test.go",
-    "justfile",
-    "README.md",
-    ".github/workflows/ci.yml",
-    "governance.json",
     "docs/contracts.md",
-    "templates/skills/ledger-architecture-review.md"
+    "internal/currency/currency.go",
+    "internal/currency/currency_test.go",
+    "internal/currency/app.go",
+    "internal/governance/coverage.go",
+    "internal/governance/workspace.go",
+    "internal/governance/git.go",
+    "internal/governance/governance_test.go"
   ],
-  "findings": [
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 23,
-      "rule": "The justfile reader must not discard a recipe header that just accepts and runs, so rule (a) sees every body that invokes the CLI and rules (b)/(c) see every real provider.",
-      "trigger": "`^(set|export|unexport|import|mod|alias|shell)\\s` still matches any of those words followed by whitespace, but just only treats a word as a keyword when the rest of the line is the matching statement. With just 1.54.0, `shell target:`, `set target:`, `export target:`, `unexport target:`, `import target:`, `mod target:`, `alias target:` and the same names with a default (`shell x=\"1\":`) are accepted as recipes named after the keyword (just --summary lists them, `just shell x` runs the body), while readJustfile drops the header and its body. Reproduced on a copy of this repository: (a) a policy whose configured command fuzz is provided only by `shell target:` makes recipes-check exit 1 with 'configured command fuzz is not reachable from any just recipe' although `just --dry-run shell x` resolves that gate; (b) a `set deploy:` recipe whose body runs `typo-command` (the CLI answers 'blocked: command \"typo-command\" is not configured', exit 1) leaves recipes-check exiting 0. 'shell' is not a just statement keyword at all, it only occurs after `set`, so its presence in the alternation is unjustified.",
-      "impact": "The two failure directions this change set out to remove survive for keyword-named recipes that take parameters: a runnable gate is reported as unreachable (a blocking failure for such a repository) and a broken or misspelled invocation inside such a recipe is certified as clean.",
-      "recommendation": "Recognise the keyword statements themselves instead of 'keyword plus whitespace' (for example `^(set|export)\\s+\\S+\\s*:=`, `^alias\\s+\\S+\\s*:=`, `^unexport\\s+\\S`, `^import\\??\\s`, `^mod\\??\\s`), drop `shell` from the keyword set, and add a regression case for a parameterized recipe named after a keyword (`shell x=\"1\":`) beside the existing `*-check` cases.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "justfile",
-      "line": 5,
-      "rule": "A newly documented public surface must be verifiable by a gate, or the documentation must state that it is convention only.",
-      "trigger": "README.md:57 now promises that `just --list` shows exactly `check`, `test` and `format-check` and that new recipes stay private, but nothing in the repository reads recipe visibility. recipes-check ignores attribute lines entirely: in a copy of this repository, stripping all 14 `[private]` lines still exits 0, and appending a public `extra:` recipe leaves `go run ./cmd/ledger-tool --root . check` green while `just --list` prints check, extra, format-check, test. recipes_test.go only ever parses fixtures it writes itself, so no test reads the repository justfile, and the README sentence is prose.",
-      "impact": "The tiering has no regression protection: the public surface can drift away from the README, or a recipe the README calls private can become public, without any failing check, and 'new recipes stay private until a daily need is proven' is unenforced advice presented as a repository rule.",
-      "recommendation": "Derive the non-private recipe set in recipes-check (or in a governance test) and fail when it differs from the documented three, and add a fixture test proving a recipe preceded by an attribute line stays reachable; otherwise mark README.md:57 as convention rather than a checked rule.",
-      "resolved": false
-    },
-    {
-      "severity": "P3",
-      "file": "internal/governance/recipes.go",
-      "line": 23,
-      "rule": "Recipe headers must not be discarded merely because their name starts with the characters of a just configuration keyword (the previous round's P3 at this line).",
-      "trigger": "Base revision 4854d6f used `^(set|export|unexport|import|mod|alias|shell)\\b`, so `-` satisfied the word boundary and `shell-check:`, `export-currencies app:`, `mod-check:`, `alias-check:`, `import-check:`, `unexport-check:`, `set-check:` plus the parameterless `set:`, `import:`, `mod:`, `alias:`, `export:` and `shell:` were dropped as configuration lines.",
-      "impact": "Closed by this change: the `\\s` form parses those headers exactly as just does. Proven by reverting only that token in a scratch copy, where `go test ./internal/governance/` fails with 'recipe export-currencies not parsed: map[check:[]] / map[check:[check]]' and passes (exit 0) with the change.",
-      "recommendation": "No action required; retained so the previous round's finding is recorded as closed. The residual keyword-name gap is tracked as the open finding above.",
-      "resolved": true
-    }
-  ],
+  "findings": [],
   "limitations": [
-    "Local-only delivery by explicit user decision: nothing was pushed and no hosted CI ran. The ubuntu-latest and windows-latest jobs in .github/workflows/ci.yml were not executed; all verification was on macOS 26.5.1 (arm64) with go1.26.6 and just 1.54.0.",
-    "Reviewer identity and independence are asserted in this artifact, not cryptographically proven; review-check validates schema and fingerprint freshness only.",
-    "The security step required network and completed here (gitleaks 8.30.1 and govulncheck 1.8.0 against the live vulnerability database found nothing); no offline replay was attempted, so an air-gapped run remains unverified.",
-    "`[private]` on recipes needs just >= 1.9.0 (2022-11-25, casey/just#1422); doctor only requires `just --version` to exit zero and the repository pins no minimum just version, and no just older than 1.54.0 was exercised, so older-just behaviour is inferred from the upstream changelog rather than measured.",
-    "Reproductions and negative controls were run on copies under /tmp; the reviewed working tree was not modified except for this artifact, and the fingerprint was re-verified as unchanged after the write.",
-    "This round reviews the uncommitted change against base 4854d6f. The previous round's findings against recipes.go:25-29, 42, 63, 64, 104, 118, 160, 187 and 199-209 and recipes_test.go:31 concern code this diff does not touch; they were not re-adjudicated here (two of them were incidentally re-observed on the current tree: imported and module recipes are still invisible to the model, and invocation text inside a quoted echo is still accepted), and this file supersedes the earlier artifact only for fingerprint freshness."
+    "Review is of the uncommitted working tree against base 1029bd2 (origin/main). Hosted ubuntu-latest and windows-latest CI were not executed by this reviewer; Windows behaviour is inferred from LF/CRLF and slash-path unit fixtures plus code inspection.",
+    "Focused local tests passed on macOS (darwin arm64) with go1.26.x: TestDigestIgnoresCRLF, TestGenerateExportAndCheck (including CRLF app-check), TestUnsafePaths, TestCompareTreeIgnoresCRLFAndReportsSlashPaths, TestCoverageEmptyBaseSkipsIncremental, TestCoverageMergingAndIncremental, TestWorkspaceAndDoctor. Full ./internal/governance package suite was not fully re-run after sandbox git-init failures.",
+    "Reviewer identity and independence are asserted in this artifact; review-check validates schema and fingerprint freshness only.",
+    "Fingerprint hashing still digests raw on-disk bytes (including CRLF). This change does not make fingerprints line-ending-invariant; that remains a separate Windows autocrlf risk outside the reviewed generate/currency/coverage gates.",
+    "Prior open P3 findings about recipes-check keyword-named recipes and just --list privacy enforcement concern code outside this diff and were not re-adjudicated here."
   ]
 }

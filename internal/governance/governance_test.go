@@ -196,6 +196,80 @@ func TestCoverageMergingAndIncremental(t *testing.T) {
 		t.Fatal("incompatible weights accepted")
 	}
 }
+
+func TestCoverageEmptyBaseSkipsIncremental(t *testing.T) {
+	r := repo(t)
+	source := "package core\nfunc A() int {\n return 1\n}\nfunc B() int {\n return 2\n}\nfunc C() int {\n return 3\n}\nfunc D() int {\n return 4\n}\nfunc E() int {\n return 5\n}\n"
+	// Executable returns sit on lines 3, 6, 9, 12, 15.
+	profile80 := "" +
+		"mode: atomic\n" +
+		"example.test/project/internal/core/core.go:3.2,3.10 1 1\n" +
+		"example.test/project/internal/core/core.go:6.2,6.10 1 1\n" +
+		"example.test/project/internal/core/core.go:9.2,9.10 1 1\n" +
+		"example.test/project/internal/core/core.go:12.2,12.10 1 1\n" +
+		"example.test/project/internal/core/core.go:15.2,15.10 1 0\n"
+	put(t, r, "internal/core/core.go", source)
+	gitOK(t, r, "add", "internal/core/core.go")
+	gitOK(t, r, "commit", "-qm", "feat(core): Expand fixture")
+	put(t, r, "coverage/unit.out", profile80)
+	c := goCoverage()
+	now := time.Now()
+	for _, base := range []string{
+		"0000000000000000000000000000000000000000",
+		"HEAD^",
+	} {
+		root := r
+		if base == "HEAD^" {
+			root = t.TempDir()
+			gitOK(t, root, "init", "-q")
+			gitOK(t, root, "config", "user.name", "Fixture")
+			gitOK(t, root, "config", "user.email", "fixture@example.test")
+			put(t, root, "go.mod", "module example.test/project\n\ngo 1.26.2\n")
+			put(t, root, "internal/core/core.go", source)
+			put(t, root, "coverage/unit.out", profile80)
+			gitOK(t, root, "add", ".")
+			gitOK(t, root, "commit", "-qm", "feat(core): Orphan fixture")
+		}
+		ref, e := Base(root, base)
+		if e != nil || ref != "EMPTY" {
+			t.Fatalf("base %q: want EMPTY, got %q err=%v", base, ref, e)
+		}
+		// Prove the old EMPTY semantics would have failed the 90% gate: every
+		// source line is marked changed, including the uncovered return.
+		all, e := ChangedLines(root, base)
+		if e != nil || !all["internal/core/core.go"][15] {
+			t.Fatalf("base %q: ChangedLines must still expose all source for classify: %#v err=%v", base, all["internal/core/core.go"], e)
+		}
+		report, e := Coverage(root, c, base, now)
+		if e != nil || report.Status != "passed" || report.IncrementalPercent != nil || report.IncrementalTotal != 0 {
+			t.Fatalf("base %q: want overall-only pass, got %#v err=%v", base, report, e)
+		}
+		if report.Percent < 70 || report.Percent >= 90 {
+			t.Fatalf("base %q: fixture percent %.2f must sit between floors", base, report.Percent)
+		}
+		classified, e := Classify(root, base, Config{Kind: "go"})
+		if e != nil || !classified.Code || len(classified.Files) == 0 {
+			t.Fatalf("base %q: classify should still treat empty base as all source: %#v err=%v", base, classified, e)
+		}
+	}
+	// Real base (empty string → HEAD vs dirty tree) still enforces 90%.
+	put(t, r, "internal/core/core.go", "package core\nfunc A() int {\n return 1\n}\nfunc B() int {\n return 2\n}\nfunc C() int {\n return 3\n}\nfunc D() int {\n return 4\n}\nfunc E() int {\n return 9\n}\n")
+	report, e := Coverage(r, c, "", now)
+	if e == nil || report.Status != "failed" || report.IncrementalPercent == nil || *report.IncrementalPercent >= 90 {
+		t.Fatalf("real base must still fail weak incremental: %#v err=%v", report, e)
+	}
+	put(t, r, "coverage/unit.out", ""+
+		"mode: atomic\n"+
+		"example.test/project/internal/core/core.go:3.2,3.10 1 1\n"+
+		"example.test/project/internal/core/core.go:6.2,6.10 1 1\n"+
+		"example.test/project/internal/core/core.go:9.2,9.10 1 1\n"+
+		"example.test/project/internal/core/core.go:12.2,12.10 1 1\n"+
+		"example.test/project/internal/core/core.go:15.2,15.10 1 1\n")
+	report, e = Coverage(r, c, "", now)
+	if e != nil || report.Status != "passed" || report.IncrementalPercent == nil || *report.IncrementalPercent != 100 {
+		t.Fatalf("covered dirty line should pass incremental: %#v err=%v", report, e)
+	}
+}
 func TestCoverageMissingAndBaseline(t *testing.T) {
 	r := repo(t)
 	c := goCoverage()
@@ -454,6 +528,26 @@ func TestWorkspaceAndDoctor(t *testing.T) {
 		if e = CopyWorkspace(r, t.TempDir(), []string{"internal/core"}); e == nil {
 			t.Fatal("copied symlink")
 		}
+	}
+}
+
+// Windows checkouts and gofmt can disagree on CRLF vs LF; path keys must stay
+// slash-form so generate-check reports the same relative paths on every OS.
+func TestCompareTreeIgnoresCRLFAndReportsSlashPaths(t *testing.T) {
+	left := t.TempDir()
+	right := t.TempDir()
+	put(t, left, "ledger-tool/main.go", "package main\n\nfunc main() {}\n")
+	put(t, right, "ledger-tool/main.go", "package main\r\n\r\nfunc main() {}\r\n")
+	if e := CompareTree(left, right); e != nil {
+		t.Fatal("CRLF vs LF treated as drift:", e)
+	}
+	put(t, right, "ledger-tool/main.go", "package main\n\nfunc other() {}\n")
+	e := CompareTree(left, right)
+	if e == nil {
+		t.Fatal("real content drift passed")
+	}
+	if want := "generated output differs: ledger-tool/main.go"; e.Error() != want {
+		t.Fatalf("path must be slash-form: got %q", e)
 	}
 }
 func TestDebugLifecycle(t *testing.T) {
