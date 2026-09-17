@@ -1,6 +1,7 @@
 package governance
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -170,17 +171,25 @@ func TestRecipesCheckReportsUnreadableWorkflows(t *testing.T) {
 }
 
 func TestCICommandsReportsUnreadableDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("directory execute bits are not enforced the same way on Windows")
-	}
 	root := t.TempDir()
 	dir := filepath.Join(root, "workflows")
 	if e := os.Mkdir(dir, 0755); e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
-	if e := os.Chmod(dir, 0); e != nil {
-		t.Fatal(e)
+	// Unix: deny directory search bits. Windows: inject a ReadDir failure —
+	// chmod does not block directory reads the same way, and the coverage
+	// gate still requires this error path on every native runner.
+	if runtime.GOOS == "windows" {
+		orig := readDir
+		readDir = func(string) ([]os.DirEntry, error) {
+			return nil, errors.New("forced read dir failure")
+		}
+		t.Cleanup(func() { readDir = orig })
+	} else {
+		t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+		if e := os.Chmod(dir, 0); e != nil {
+			t.Fatal(e)
+		}
 	}
 	if _, e := ciCommands(dir); e == nil {
 		t.Fatal("unreadable workflow directory accepted")
