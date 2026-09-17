@@ -23,6 +23,10 @@ func TestOption(t *testing.T) {
 	}
 }
 func TestDispatch(t *testing.T) {
+	// CI may inject LEDGER_BASE / LEDGER_BASE_REF for the host checkout; clear
+	// them so policy-check merge-base runs only against this temp repository.
+	t.Setenv("LEDGER_BASE", "")
+	t.Setenv("LEDGER_BASE_REF", "")
 	root := t.TempDir()
 	for _, args := range [][]string{{"init", "-b", "main"}, {"config", "user.email", "test@example.test"}, {"config", "user.name", "Test"}} {
 		c := exec.Command("git", args...)

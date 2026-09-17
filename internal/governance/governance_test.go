@@ -65,7 +65,8 @@ func TestConfigurationAndPaths(t *testing.T) {
 	if e != nil || c.Kind != "go" {
 		t.Fatal(c, e)
 	}
-	for _, p := range []string{"", "../outside", "/absolute", "a\\b"} {
+	outside := filepath.Join(t.TempDir(), "outside")
+	for _, p := range []string{"", "../outside", outside, "a\\b"} {
 		if _, e := safePath(r, p); e == nil {
 			t.Errorf("accepted %q", p)
 		}

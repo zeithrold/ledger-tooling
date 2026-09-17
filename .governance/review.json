@@ -1,24 +1,23 @@
 {
   "schema_version": 1,
-  "fingerprint": "f2eef52900311c63d89f1e23c958c9e026e71d72f781fd1174c2e840a31b8920",
-  "reviewer": "independent-architecture-reviewer-windows-ci-line-endings",
+  "fingerprint": "a7788a89f2781b441da530b52484302ec772dd62b89cf62927a0d552e2cfeaf4",
+  "reviewer": "independent-architecture-reviewer-ci-test-isolation",
   "independent": true,
   "scope": [
-    "docs/contracts.md",
-    "internal/currency/currency.go",
-    "internal/currency/currency_test.go",
-    "internal/currency/app.go",
-    "internal/governance/coverage.go",
-    "internal/governance/workspace.go",
-    "internal/governance/git.go",
-    "internal/governance/governance_test.go"
+    "cmd/ledger-tool/main_test.go",
+    "internal/governance/governance_test.go",
+    "internal/governance/recipes.go",
+    "internal/governance/recipes_test.go",
+    "policy-check LEDGER_BASE / LEDGER_BASE_REF isolation",
+    "safePath absolute-path rejection",
+    "RecipesCheck / ciCommands workflows path hardening"
   ],
   "findings": [],
   "limitations": [
-    "Review is of the uncommitted working tree against base 1029bd2 (origin/main). Hosted ubuntu-latest and windows-latest CI were not executed by this reviewer; Windows behaviour is inferred from LF/CRLF and slash-path unit fixtures plus code inspection.",
-    "Focused local tests passed on macOS (darwin arm64) with go1.26.x: TestDigestIgnoresCRLF, TestGenerateExportAndCheck (including CRLF app-check), TestUnsafePaths, TestCompareTreeIgnoresCRLFAndReportsSlashPaths, TestCoverageEmptyBaseSkipsIncremental, TestCoverageMergingAndIncremental, TestWorkspaceAndDoctor. Full ./internal/governance package suite was not fully re-run after sandbox git-init failures.",
-    "Reviewer identity and independence are asserted in this artifact; review-check validates schema and fingerprint freshness only.",
-    "Fingerprint hashing still digests raw on-disk bytes (including CRLF). This change does not make fingerprints line-ending-invariant; that remains a separate Windows autocrlf risk outside the reviewed generate/currency/coverage gates.",
-    "Prior open P3 findings about recipes-check keyword-named recipes and just --list privacy enforcement concern code outside this diff and were not re-adjudicated here."
+    "Review is of the uncommitted working tree against base ff17e1b (origin/main). Hosted ubuntu-latest, macos-latest, and windows-latest CI were not executed by this reviewer.",
+    "Local darwin/arm64 verification with go1.26.6 passed for TestDispatch (including LEDGER_BASE/LEDGER_BASE_REF pollution), TestConfigurationAndPaths, TestRecipesCheck, TestRecipesCheckReportsUnreadableWorkflows, TestCICommandsSources, and TestCICommandsReportsUnreadableDirectory.",
+    "Windows absolute-path and workflows-file replacement behaviour was validated by code inspection against filepath.IsAbs / RemoveAll+WriteFile semantics; this host did not run a Windows runner.",
+    "TestCICommandsReportsUnreadableDirectory intentionally skips on Windows; chmod-based unreadable-directory coverage remains Unix-only.",
+    "Reviewer identity and independence are asserted in this artifact; review-check validates schema and fingerprint freshness only."
   ]
 }

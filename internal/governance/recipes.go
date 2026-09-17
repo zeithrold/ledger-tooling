@@ -168,10 +168,17 @@ func readJustfile(path string) (recipeSheet, error) {
 // ciCommands collects the commands the workflows invoke directly.
 func ciCommands(dir string) (map[string]bool, error) {
 	out := map[string]bool{}
-	entries, err := os.ReadDir(dir)
+	info, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		return out, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("workflows path is not a directory: %s", dir)
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

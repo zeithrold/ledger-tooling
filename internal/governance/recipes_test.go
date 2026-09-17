@@ -3,6 +3,7 @@ package governance
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -151,8 +152,37 @@ func TestCICommandsSources(t *testing.T) {
 
 func TestRecipesCheckReportsUnreadableWorkflows(t *testing.T) {
 	root := recipesFixture(t, "check:\n    go run ./tool/bootstrap.go check\n\nsecurity:\n    go run ./tool/bootstrap.go security\n\nfuzz:\n    go run ./tool/bootstrap.go fuzz\n", "")
-	put(t, root, ".github/workflows", "not a directory\n")
+	workflows := filepath.Join(root, ".github", "workflows")
+	// recipesFixture / earlier puts may leave workflows as a directory; replace
+	// it with a file so RecipesCheck must reject a non-directory path.
+	if e := os.RemoveAll(workflows); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.MkdirAll(filepath.Dir(workflows), 0755); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.WriteFile(workflows, []byte("not a directory\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
 	if e := RecipesCheck(root, loadPolicy(t, root)); e == nil {
+		t.Fatal("unreadable workflow directory accepted")
+	}
+}
+
+func TestCICommandsReportsUnreadableDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory execute bits are not enforced the same way on Windows")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "workflows")
+	if e := os.Mkdir(dir, 0755); e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+	if e := os.Chmod(dir, 0); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := ciCommands(dir); e == nil {
 		t.Fatal("unreadable workflow directory accepted")
 	}
 }
